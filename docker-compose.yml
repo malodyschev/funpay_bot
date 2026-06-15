@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: funpay_bot_pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: funpay_bot
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5437:5432"          # host:container — подключение с хоста на localhost:5437
+    volumes:
+      - funpay_bot_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d funpay_bot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  funpay_bot_pgdata:
