@@ -10,6 +10,7 @@ from app.rental.common.commands import (
 )
 from app.rental.common.enums import ExtensionReasonEnum
 from app.rental.funpay.events import NewMessageEvent, NewOrderEvent, NewReviewEvent
+from app.rental.repositories.rental import RentalRepository
 from app.rental.services.extend_rental import ExtendRentalService
 from app.rental.services.guard_code import GuardCodeService
 from app.rental.services.info import InfoService
@@ -56,6 +57,19 @@ async def on_new_review(event: NewReviewEvent) -> None:
     async with get_session() as session:
         await ExtendRentalService(session, runtime.get_deps()).extend_by_order(
             event.order_id,
+            settings.hours_for_review * 60,
+            ExtensionReasonEnum.REVIEW,
+        )
+
+
+async def on_new_review_by_chat(chat_id: int) -> None:
+    """Отзыв пришёл системным сообщением в чат — продлеваем аренду этого чата."""
+    async with get_session() as session:
+        rental = await RentalRepository(session).get_active_by_chat(chat_id)
+        if not rental:
+            return
+        await ExtendRentalService(session, runtime.get_deps()).extend_by_id(
+            rental.id,
             settings.hours_for_review * 60,
             ExtensionReasonEnum.REVIEW,
         )

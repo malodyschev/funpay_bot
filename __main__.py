@@ -119,6 +119,8 @@ async def _run() -> None:
     from app.rental.admin_bot.bot import build_admin_bot
     from app.rental.admin_bot.sim_connector import TelegramSimFunPayConnector
     from app.rental.admin_bot.telegram_notifier import TelegramNotifier
+    from app.rental.funpay.listener import run_funpay_listener
+    from app.rental.funpay.real import RealFunPayConnector, build_account
     from app.rental.poller import run_poller
     from app.rental.steam.real import RealSteamModule
     from app.runtime import RentalDeps, runtime
@@ -129,18 +131,36 @@ async def _run() -> None:
         raise click.ClickException('нужны BOT_TOKEN и ADMIN_ID/ADMIN_IDS в .env')
 
     bot, dp = build_admin_bot(settings.bot_token, admin_ids)
+
+    # Есть golden_key → боевой FunPay; иначе — режим симуляции в Telegram.
+    account = None
+    if settings.funpay_golden_key:
+        account = await asyncio.to_thread(
+            build_account,
+            settings.funpay_golden_key,
+            settings.funpay_user_agent,
+            settings.proxy_url or None,
+        )
+        funpay = RealFunPayConnector(account)
+    else:
+        funpay = TelegramSimFunPayConnector(bot, admin_ids)
+        logger.info('funpay golden_key не задан — режим симуляции')
+
     runtime.deps = RentalDeps(
-        funpay=TelegramSimFunPayConnector(bot, admin_ids),
+        funpay=funpay,
         steam=RealSteamModule(proxy=settings.proxy_url or None),
         notifier=TelegramNotifier(bot, admin_ids),
     )
 
-    poller_task = asyncio.create_task(run_poller())
-    logger.info('admin bot started')
+    tasks = [asyncio.create_task(run_poller())]
+    if account is not None:
+        tasks.append(asyncio.create_task(run_funpay_listener(account)))
+    logger.info('admin bot started (funpay=%s)', 'real' if account else 'simulation')
     try:
         await dp.start_polling(bot)
     finally:
-        poller_task.cancel()
+        for task in tasks:
+            task.cancel()
         await bot.session.close()
 
 
