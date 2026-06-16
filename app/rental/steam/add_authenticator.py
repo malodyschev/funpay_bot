@@ -53,10 +53,13 @@ async def begin_credentials_login(
                 'account_name': login,
                 'encrypted_password': encrypted,
                 'encryption_timestamp': timestamp,
+                'remember_login': 'true',
                 'persistence': '1',
                 'website_id': 'Community',
-                'device_friendly_name': 'funpay-bot',
-                'platform_type': '2',
+                # device_details — вложенное protobuf-сообщение; без него Steam
+                # не считает это «входом с устройства» и не шлёт email-код.
+                'device_details[device_friendly_name]': 'funpay-bot',
+                'device_details[platform_type]': '2',  # WebBrowser
             },
         )
         data = resp.json().get('response', {})

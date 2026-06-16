@@ -429,7 +429,7 @@ async def test_sync_lots_creates_draft_and_updates(session):
     fp_lot = N(id=12345, title='Аренда CS2', description='d', price=100.0, subcategory=N(id=999))
     account = N(id=1, get_user=lambda uid: N(get_lots=lambda: [fp_lot]))
 
-    created, updated = await sync_lots(session, account)
+    created, updated, _ = await sync_lots(session, account)
     assert (created, updated) == (1, 0)
     lot = await LotRepository(session).get_or_none(funpay_lot_id=12345)
     assert lot.title == 'Аренда CS2'
@@ -439,7 +439,7 @@ async def test_sync_lots_creates_draft_and_updates(session):
 
     # повторная синхронизация → апдейт, не дубль
     fp_lot.price = 150.0
-    created2, updated2 = await sync_lots(session, account)
+    created2, updated2, _ = await sync_lots(session, account)
     assert (created2, updated2) == (0, 1)
     refreshed = await LotRepository(session).get_or_none(funpay_lot_id=12345)
     assert refreshed.price == 150.0
@@ -511,7 +511,7 @@ async def test_sync_creates_separate_lots_for_same_title(session):
     fp2 = N(id=22, title='CS2', description='d', price=10.0, subcategory=N(id=1))
     account = N(id=1, get_user=lambda uid: N(get_lots=lambda: [fp1, fp2]))
 
-    created, updated = await sync_lots(session, account)
+    created, updated, _ = await sync_lots(session, account)
     assert (created, updated) == (2, 0)
     lots = await LotRepository(session).get_all(title='CS2')
     assert len(lots) == 2

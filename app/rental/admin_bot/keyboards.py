@@ -9,6 +9,7 @@ from app.rental.admin_bot.callbacks import (
     LotAct,
     LotOpen,
     Menu,
+    MoveTo,
     Refund,
     Sim,
 )
@@ -46,11 +47,11 @@ def lot_kind() -> InlineKeyboardMarkup:
 def lots_menu(lots: list[LotStock]) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     for ls in lots:
-        label = (
-            f'⏱ {ls.lot.title} (продление)'
-            if ls.lot.is_extension
-            else f'{ls.lot.title} ({ls.free}/{ls.total})'
-        )
+        mark = '' if ls.lot.active else '⚪️ '
+        if ls.lot.is_extension:
+            label = f'{mark}⏱ {ls.lot.title} (продление)'
+        else:
+            label = f'{mark}{ls.lot.title} ({ls.free}/{ls.total})'
         kb.button(text=label, callback_data=LotOpen(lot_id=ls.lot.id))
     kb.button(text='🔄 Синхр. с FunPay', callback_data=Menu(action='sync'))
     kb.button(text='➕ Добавить лот', callback_data=Menu(action='add_lot'))
@@ -102,8 +103,25 @@ def account_card(view: AccountView) -> InlineKeyboardMarkup:
     if acc.status != AccountStatusEnum.FREE:
         kb.button(text='🟢 Вернуть в пул', callback_data=Acc(action='activate', account_id=acc.id))
 
+    if acc.status != AccountStatusEnum.RENTED:
+        kb.button(text='🔀 Переместить в лот', callback_data=Acc(action='move', account_id=acc.id))
     kb.button(text='📝 Заметка', callback_data=Acc(action='notes', account_id=acc.id))
     kb.button(text='⬅️ К лоту', callback_data=LotOpen(lot_id=acc.lot_id))
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def move_picker(account_id: int, lots: list[LotStock], current_lot_id: int) -> InlineKeyboardMarkup:
+    """Выбор целевого лота для перемещения аккаунта (без лотов-продлений и текущего)."""
+    kb = InlineKeyboardBuilder()
+    for ls in lots:
+        if ls.lot.is_extension or ls.lot.id == current_lot_id:
+            continue
+        kb.button(
+            text=f'{ls.lot.title} ({ls.free}/{ls.total})',
+            callback_data=MoveTo(account_id=account_id, lot_id=ls.lot.id),
+        )
+    kb.button(text='↩️ Отмена', callback_data=Acc(action='open', account_id=account_id))
     kb.adjust(1)
     return kb.as_markup()
 

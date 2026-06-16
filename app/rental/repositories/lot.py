@@ -29,3 +29,8 @@ class LotRepository(Repository[Lot]):
             .limit(1)
         )
         return await self.scalar(query)
+
+    async def active_linked(self) -> Sequence[Lot]:
+        """Наши активные лоты, привязанные к офферу FunPay (для сверки удалений)."""
+        query = sa.select(Lot).where(Lot.active.is_(True), Lot.funpay_lot_id.is_not(None))
+        return await self.scalars(query)

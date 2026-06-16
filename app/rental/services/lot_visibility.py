@@ -1,3 +1,4 @@
+import contextlib
 from logging import getLogger
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,15 +15,25 @@ async def sync_lot_visibility(session: AsyncSession, deps: RentalDeps, lot_id: i
     """Показать/скрыть лот на FunPay по наличию свободных аккаунтов.
 
     Есть свободные → лот виден; распродан (0 свободных) → скрыт. Так
-    покупатель не оплатит лот, который мы не сможем выдать. Лоты без
-    funpay_lot_id и лоты-продления пропускаем. Ошибки не пробрасываем —
-    видимость не должна ронять основной поток.
+    покупатель не оплатит лот, который мы не сможем выдать. Лоты-продления
+    пропускаем; лоты без funpay_lot_id — тоже (с предупреждением в лог).
+    Ошибки не пробрасываем (видимость не должна ронять поток), но шлём алерт
+    админу — иначе «лот не скрылся» молча.
     """
     lot = await LotRepository(session).get_or_none(id_=lot_id)
-    if not lot or lot.funpay_lot_id is None or lot.is_extension:
+    if not lot or lot.is_extension:
+        return
+    if lot.funpay_lot_id is None:
+        logger.warning('lot %s ("%s") без funpay_lot_id — видимость не меняем', lot_id, lot.title)
         return
     free = await AccountRepository(session).count_free(lot_id)
     try:
         await deps.funpay.set_lot_active(lot.funpay_lot_id, free > 0)
-    except Exception:
+    except Exception as exc:
         logger.exception('failed to sync FunPay visibility for lot %s', lot_id)
+        action = 'показать' if free > 0 else 'скрыть'
+        with contextlib.suppress(Exception):
+            await deps.notifier.notify(
+                f'⚠️ Не удалось {action} лот "{lot.title}" на FunPay '
+                f'(оффер {lot.funpay_lot_id}): {exc}',
+            )

@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import getpass
 import os
 from logging import getLogger
@@ -199,10 +200,24 @@ async def _run() -> None:
     if account is not None:
         try:
             async with get_session() as session:
-                created, updated = await sync_lots(session, account)
-            logger.info('startup funpay lot sync: created=%s updated=%s', created, updated)
+                created, updated, deactivated = await sync_lots(session, account)
+            logger.info(
+                'startup funpay lot sync: created=%s updated=%s deactivated=%s',
+                created, updated, deactivated,
+            )
         except Exception:
             logger.exception('startup funpay lot sync failed')
+
+    if funpay_error:
+        for admin_id in admin_ids:
+            with contextlib.suppress(Exception):
+                await bot.send_message(
+                    admin_id,
+                    '⚠️ FunPay недоступен при старте (таймаут/блокировка). '
+                    'Бот работает без FunPay: админка и таймеры активны, '
+                    'приём заказов выключен. Проверь сеть/proxy_url и перезапусти.\n'
+                    f'Причина: {funpay_error}',
+                )
 
     tasks = [asyncio.create_task(run_poller())]
     if account is not None:

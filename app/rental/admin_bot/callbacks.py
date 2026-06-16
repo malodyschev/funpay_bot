@@ -62,3 +62,10 @@ class LotAct(CallbackData, prefix='la'):
 
     action: str
     lot_id: int
+
+
+class MoveTo(CallbackData, prefix='mv'):
+    """Переместить аккаунт в другой лот."""
+
+    account_id: int
+    lot_id: int

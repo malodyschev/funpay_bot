@@ -193,6 +193,25 @@ class AdminService:
         await self.account_repo.update({'notes': notes}, id_=account_id)
         return 'Заметка сохранена.'
 
+    async def move_account_to_lot(self, account_id: int, target_lot_id: int) -> str:
+        """Перенести аккаунт в другой лот (без отвязки аутентификатора).
+
+        Нельзя двигать арендованный аккаунт (есть активная аренда на старом лоте).
+        Обновляем видимость старого и нового лотов по стоку.
+        """
+        account = await self.account_repo.get_or_none(id_=account_id)
+        if not account:
+            return 'Аккаунт не найден.'
+        if account.status == AccountStatusEnum.RENTED:
+            return 'Аккаунт в аренде — сначала заверши её.'
+        old_lot_id = account.lot_id
+        if old_lot_id == target_lot_id:
+            return 'Аккаунт уже в этом лоте.'
+        await self.account_repo.update({'lot_id': target_lot_id}, id_=account_id)
+        await sync_lot_visibility(self.session, self.deps, old_lot_id)
+        await sync_lot_visibility(self.session, self.deps, target_lot_id)
+        return f'Аккаунт перемещён в лот #{target_lot_id}.'
+
     async def set_lot_duration(self, lot_id: int, minutes: int) -> str:
         """Задать длительность аренды лота (мин.)."""
         await self.lot_repo.update({'duration_minutes': minutes}, id_=lot_id)

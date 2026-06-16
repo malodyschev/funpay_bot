@@ -8,7 +8,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from app.database import get_session
 from app.rental.admin_bot import formatters as fmt, keyboards as kb
-from app.rental.admin_bot.callbacks import Acc, Extend, LotOpen
+from app.rental.admin_bot.callbacks import Acc, Extend, LotOpen, MoveTo
 from app.rental.common.enums import AccountStatusEnum
 from app.rental.services.admin import AdminService
 from app.runtime import runtime
@@ -83,6 +83,30 @@ async def reveal(cb: CallbackQuery, callback_data: Acc) -> None:
 async def extend_menu(cb: CallbackQuery, callback_data: Acc) -> None:
     await cb.message.edit_reply_markup(reply_markup=kb.extend_options(callback_data.account_id))
     await cb.answer()
+
+
+@router.callback_query(Acc.filter(F.action == 'move'))
+async def move_menu(cb: CallbackQuery, callback_data: Acc) -> None:
+    async with get_session() as session:
+        svc = AdminService(session, runtime.get_deps())
+        view = await svc.account_card(callback_data.account_id)
+        lots = await svc.lots_with_stock()
+    if not view:
+        await cb.answer('Аккаунт не найден', show_alert=True)
+        return
+    await cb.message.edit_reply_markup(
+        reply_markup=kb.move_picker(callback_data.account_id, lots, view.account.lot_id),
+    )
+    await cb.answer()
+
+
+@router.callback_query(MoveTo.filter())
+async def move_apply(cb: CallbackQuery, callback_data: MoveTo) -> None:
+    async with get_session() as session:
+        svc = AdminService(session, runtime.get_deps())
+        result = await svc.move_account_to_lot(callback_data.account_id, callback_data.lot_id)
+    await cb.answer(result, show_alert=True)
+    await _show_card(cb, callback_data.account_id)
 
 
 @router.callback_query(Extend.filter())
