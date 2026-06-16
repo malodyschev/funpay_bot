@@ -19,3 +19,11 @@ class FunPayConnector(ABC):
     @abstractmethod
     async def set_lot_active(self, funpay_lot_id: int, active: bool) -> None:
         """Показать/скрыть лот на FunPay (авто-скрытие при продаже)."""
+
+    @abstractmethod
+    async def get_viewed_lot_id(self, chat_id: int) -> int | None:
+        """ID оффера FunPay, который покупатель сейчас смотрит (для !free до покупки).
+
+        None, если покупатель не на странице лота или данные недоступны —
+        тогда !free показывает наличие по всем лотам.
+        """

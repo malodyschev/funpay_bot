@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.gitignore
+.env
+*.db
+dev.db
+logs/
+tests/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.maFile

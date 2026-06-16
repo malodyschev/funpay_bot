@@ -211,7 +211,7 @@ def sim_pick_rental(views: list[RentalView], action: str) -> InlineKeyboardMarku
 
 def sim_commands(chat_id: int) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    for cmd in ('!free', '!acc', '!code', '!admin', '!extend'):
+    for cmd in ('!free', '!free-all', '!acc', '!code', '!time', '!extend', '!refund', '!admin'):
         kb.button(text=cmd, callback_data=Sim(action='cmd_send', arg=f'{chat_id}|{cmd}'))
     kb.button(text='⬅️ Назад', callback_data=Sim(action='cmd_menu'))
     kb.adjust(2)

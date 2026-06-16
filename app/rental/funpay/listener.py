@@ -1,5 +1,7 @@
 import asyncio
 import itertools
+import re
+import threading
 from logging import getLogger
 
 import FunPayAPI
@@ -32,11 +34,19 @@ async def run_funpay_listener(account: FunPayAPI.Account) -> None:
     у FunPayAPI хрупкий и валится на отдельных чатах) — реагируем на
     LastChatMessageChangedEvent, где есть chat_id, текст и тип последнего
     сообщения. Этого хватает для команд (!код) и отзывов.
+
+    Начиная с FunPayAPI 1.x Runner шлёт запросы не из listen(), а из очереди,
+    которую разгребает отдельный воркер Runner.loop(). Без запущенного loop()
+    listen() блокируется навсегда (get_result ждёт ответ, которого никто не
+    кладёт) — поэтому loop() обязательно крутим во втором демон-потоке.
     """
     loop = asyncio.get_running_loop()
 
     def worker() -> None:
         runner = Runner(account, disable_message_requests=True)
+        threading.Thread(
+            target=runner.loop, name='funpay-runner-queue', daemon=True,
+        ).start()
         for event in runner.listen(requests_delay=settings.funpay_requests_delay):
             try:
                 asyncio.run_coroutine_threadsafe(_handle(account, event), loop).result()
@@ -62,13 +72,26 @@ async def _handle_order(account: FunPayAPI.Account, order) -> None:
     if not chat:
         logger.warning('no chat for buyer %s (order %s)', order.buyer_username, order.id)
         return
+    amount = getattr(order, 'amount', 1) or 1
     await on_new_order(NewOrderEvent(
         order_id=order.id,
-        lot_title=order.description or '',
+        # При кол-ве > 1 FunPay вшивает «, N шт.» в описание — срезаем, иначе
+        # лот не сматчится по названию.
+        lot_title=_clean_lot_title(order.description or ''),
         buyer_id=order.buyer_id,
         buyer_username=order.buyer_username,
         chat_id=chat.id,
+        amount=amount,
     ))
+
+
+# Суффикс количества в описании заказа: «, 2 шт.» / «, 1 000 pcs.».
+_AMOUNT_SUFFIX = re.compile(r',\s*\d[\d\s]*\s*(?:шт|pcs)\.\s*$')
+
+
+def _clean_lot_title(description: str) -> str:
+    """Убрать хвост «, N шт.» из описания заказа, оставив чистое название лота."""
+    return _AMOUNT_SUFFIX.sub('', description).strip()
 
 
 async def _handle_chat_changed(chat) -> None:

@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     version: str = '0.1.0'
     log_is_json: bool = False
     log_level: int = 20
+    log_file: str = ''  # путь к файлу логов; пусто = только stdout (без ротации в файл)
+    log_retention_days: int = 5  # сколько дней хранить ротируемые файлы логов
 
     db_url: str = ''  # переопределяет сборку URL ниже (напр. sqlite+aiosqlite:///./dev.db)
     db_name: str = ''

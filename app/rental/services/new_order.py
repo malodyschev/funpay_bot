@@ -69,8 +69,10 @@ class NewOrderService:
 
         await self.account_repo.update({'status': AccountStatusEnum.RENTED}, id_=account.id)
 
+        # Кол-во купленных единиц умножает длительность (2 шт. = 2× времени).
+        total_minutes = lot.duration_minutes * max(1, event.amount)
         now = datetime.now()
-        expires_at = now + timedelta(minutes=lot.duration_minutes)
+        expires_at = now + timedelta(minutes=total_minutes)
         rental = await self.rental_repo.create({
             'account_id': account.id,
             'lot_id': lot.id,
@@ -87,7 +89,7 @@ class NewOrderService:
             lot.delivery_template,
             login=account.login,
             password=decrypt(account.password_enc),
-            minutes=lot.duration_minutes,
+            minutes=total_minutes,
             game=lot.game or '',
         )
         await self.deps.funpay.send_message(event.chat_id, text)
@@ -119,14 +121,15 @@ class NewOrderService:
                 f'У покупателя {event.buyer_username} {len(rentals)} активных аренд; '
                 f'продлеваю ближайшую (аренда {target.id}, заказ {event.order_id}).',
             )
+        added_minutes = lot.duration_minutes * max(1, event.amount)
         await ExtendRentalService(self.session, self.deps).extend_by_id(
             target.id,
-            lot.duration_minutes,
+            added_minutes,
             ExtensionReasonEnum.PURCHASE,
             order_id=event.order_id,
         )
         logger.info('extension order %s -> rental %s (+%s min)',
-                    event.order_id, target.id, lot.duration_minutes)
+                    event.order_id, target.id, added_minutes)
 
     async def _handle_no_free_account(self, event: NewOrderEvent, lot_title: str) -> None:
         """W5. Нет свободного аккаунта → алерт админу + запрос возврата."""

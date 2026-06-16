@@ -43,3 +43,7 @@ class TelegramSimFunPayConnector(FunPayConnector):
         state = 'показан' if active else 'скрыт'
         logger.info('[sim funpay] lot %s active=%s', funpay_lot_id, active)
         await self._broadcast(f'👁 <b>[FunPay]</b> лот {funpay_lot_id} {state} (симуляция).')
+
+    async def get_viewed_lot_id(self, chat_id: int) -> int | None:
+        # В симуляции не знаем, что «смотрит» покупатель — !free покажет все лоты.
+        return None

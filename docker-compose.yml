@@ -4,18 +4,34 @@ services:
     container_name: funpay_bot_pg
     restart: unless-stopped
     environment:
-      POSTGRES_DB: funpay_bot
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${db_name:-funpay_bot}
+      POSTGRES_USER: ${db_username:-postgres}
+      POSTGRES_PASSWORD: ${db_password:-postgres}
     ports:
-      - "5437:5432"          # host:container — подключение с хоста на localhost:5437
+      - "127.0.0.1:5437:5432"   # доступ к БД только с самого сервера (не наружу)
     volumes:
       - funpay_bot_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d funpay_bot"]
+      test: ["CMD-SHELL", "pg_isready -U ${db_username:-postgres} -d ${db_name:-funpay_bot}"]
       interval: 5s
       timeout: 5s
       retries: 10
+
+  bot:
+    build: .
+    container_name: funpay_bot
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      # Внутри сети compose БД доступна по имени сервиса, порт 5432.
+      # Переопределяет db_host/db_port из .env (env > .env в pydantic-settings).
+      db_host: postgres
+      db_port: "5432"
+    volumes:
+      - ./logs:/app/logs   # ротация логов видна на хосте (log_file=logs/bot.log)
 
 volumes:
   funpay_bot_pgdata:

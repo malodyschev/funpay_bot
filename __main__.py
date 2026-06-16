@@ -71,6 +71,31 @@ def sync_schema():
     logger.info('schema synced (tables + missing columns)')
 
 
+@cli.command('reset-templates')
+@click.confirmation_option(
+    prompt='Перезаписать шаблон выдачи у ВСЕХ лотов новым стандартным текстом?',
+)
+def reset_templates():
+    """Применить новый стандартный текст выдачи (DEFAULT_DELIVERY_TEMPLATE) ко всем лотам.
+
+    Нужно после правок текста: у существующих лотов шаблон хранится в БД, поэтому
+    смена константы сама их не обновляет. Внимание: затирает любые ручные шаблоны.
+    """
+    setup_logging()
+
+    async def _reset() -> None:
+        from app.rental.models.lot import Lot
+
+        async with get_session() as session:
+            result = await session.execute(
+                sa.update(Lot).values(delivery_template=DEFAULT_DELIVERY_TEMPLATE),
+            )
+            await session.commit()
+        click.echo(f'updated delivery_template for {result.rowcount} lots')
+
+    asyncio.run(_reset())
+
+
 @cli.command('create-lot')
 @click.option('--title', required=True, help='Название лота (точно как на FunPay)')
 @click.option('--duration', type=int, required=True, help='Длительность аренды, мин.')

@@ -16,6 +16,8 @@ router = Router()
 @router.callback_query(Refund.filter())
 async def handle_refund(cb: CallbackQuery, callback_data: Refund) -> None:
     if not callback_data.yes:
+        async with get_session() as session:
+            await RefundService(session, runtime.get_deps()).decline(callback_data.order_id)
         await cb.message.edit_text('↩️ Возврат отклонён.')
         await cb.answer()
         return

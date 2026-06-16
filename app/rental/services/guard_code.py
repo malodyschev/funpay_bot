@@ -31,7 +31,9 @@ class GuardCodeService:
         if not rental:
             await self.deps.funpay.send_message(
                 event.chat_id,
-                'Активная аренда не найдена.',
+                '📱 Код Steam Guard выдаётся только во время активной аренды.\n'
+                'Сначала оплатите заказ и возьмите данные командой !acc. '
+                'Если уже оплатили — напишите !admin.',
             )
             return
 
@@ -42,8 +44,9 @@ class GuardCodeService:
             logger.exception('failed to generate guard code for account %s', account.id)
             await self.deps.funpay.send_message(
                 event.chat_id,
-                'Не удалось получить код, попробуйте ещё раз через минуту.',
+                '⚠️ Не получилось сгенерировать код прямо сейчас. '
+                'Попробуйте ещё раз через минуту или напишите !admin.',
             )
             return
 
-        await self.deps.funpay.send_message(event.chat_id, f'Код Steam Guard: {code}')
+        await self.deps.funpay.send_message(event.chat_id, f'📱 Код Steam Guard: {code}')

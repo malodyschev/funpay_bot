@@ -10,6 +10,7 @@ class NewOrderEvent:
     buyer_id: int
     buyer_username: str
     chat_id: int
+    amount: int = 1  # сколько единиц куплено (кол-во → множитель длительности)
 
 
 @dataclass

@@ -64,7 +64,7 @@ async def seed_lot(session, *, duration_minutes=60) -> Lot:
         title='Аренда Dota 2 на 1 час',
         game='Dota 2',
         duration_minutes=duration_minutes,
-        delivery_template='Логин: {login}\nПароль: {password}\nСрок: {minutes} мин. !код для кода',
+        delivery_template='Логин: {login}\nПароль: {password}\nСрок: {minutes} мин. !code для кода',
         active=True,
     )
     session.add(lot)
@@ -89,13 +89,14 @@ async def seed_account(session, lot_id, *, type_=AccountTypeEnum.ONLINE) -> Acco
     return account
 
 
-def order_event(order_id='ORDER-1', chat_id=555):
+def order_event(order_id='ORDER-1', chat_id=555, amount=1):
     return NewOrderEvent(
         order_id=order_id,
         lot_title='Аренда Dota 2 на 1 час',
         buyer_id=42,
         buyer_username='buyer',
         chat_id=chat_id,
+        amount=amount,
     )
 
 
@@ -115,6 +116,27 @@ async def test_w1_new_order_delivers_and_reserves(session):
     chat_id, text = deps.funpay.sent[0]
     assert chat_id == 555
     assert 'steam_login' in text and 'old_password' in text
+
+
+async def test_w1_quantity_multiplies_duration(session):
+    lot = await seed_lot(session, duration_minutes=60)
+    await seed_account(session, lot.id)
+    deps = make_deps()
+
+    await NewOrderService(session, deps).handle(order_event(amount=2))
+
+    rental = await RentalRepository(session).get_by_order_id('ORDER-1')
+    assert rental is not None
+    # 2 шт. × 60 мин = 120 мин аренды
+    assert rental.expires_at - rental.started_at == timedelta(minutes=120)
+
+
+def test_clean_lot_title_strips_amount_suffix():
+    from app.rental.funpay.listener import _clean_lot_title
+
+    assert _clean_lot_title('Аренда Dota 2 на 1 час, 2 шт.') == 'Аренда Dota 2 на 1 час'
+    assert _clean_lot_title('Аренда Dota 2 на 1 час, 1 000 pcs.') == 'Аренда Dota 2 на 1 час'
+    assert _clean_lot_title('Аренда Dota 2 на 1 час') == 'Аренда Dota 2 на 1 час'
 
 
 async def test_w1_idempotent_on_duplicate_order(session):
@@ -147,7 +169,7 @@ async def test_w2_guard_code(session):
     await NewOrderService(session, deps).handle(order_event())
 
     await GuardCodeService(session, deps).handle(
-        NewMessageEvent(chat_id=555, message_id=1, author_id=42, text='!код'),
+        NewMessageEvent(chat_id=555, message_id=1, author_id=42, text='!code'),
     )
 
     assert 'ABCDE' in deps.funpay.sent[-1][1]
@@ -254,6 +276,53 @@ async def test_w5_refund_releases_account(session):
     assert rental.status == RentalStatusEnum.REFUNDED
 
 
+async def test_extend_command_gives_link(session):
+    ext = Lot(
+        title='Продление Dota +1 час',
+        duration_minutes=60,
+        delivery_template='-',
+        active=True,
+        is_extension=True,
+        funpay_lot_id=4242,
+    )
+    session.add(ext)
+    await session.commit()
+    deps = make_deps()
+
+    await InfoService(session, deps).extend_info(555)
+    text = deps.funpay.sent[-1][1]
+    assert 'offer?id=4242' in text and '+60' in text
+
+
+async def test_refund_command_asks_admin(session):
+    lot = await seed_lot(session)
+    await seed_account(session, lot.id)
+    deps = make_deps()
+    await NewOrderService(session, deps).handle(order_event())
+
+    await InfoService(session, deps).request_refund(555)
+
+    # админу ушёл запрос с order_id, покупателю — подтверждение
+    assert deps.notifier.refund_requests[-1][0] == 'ORDER-1'
+    assert 'возврат' in deps.funpay.sent[-1][1].lower()
+
+
+async def test_refund_command_without_rental(session):
+    deps = make_deps()
+    await InfoService(session, deps).request_refund(555)
+    assert deps.notifier.refund_requests == []  # нет аренды → админа не дёргаем
+
+
+async def test_refund_decline_notifies_buyer(session):
+    lot = await seed_lot(session)
+    await seed_account(session, lot.id)
+    deps = make_deps()
+    await NewOrderService(session, deps).handle(order_event())
+
+    await RefundService(session, deps).decline('ORDER-1')
+    assert 'отклонил' in deps.funpay.sent[-1][1].lower()
+
+
 async def test_w6_info_commands(session):
     lot = await seed_lot(session)
     await seed_account(session, lot.id)
@@ -263,9 +332,34 @@ async def test_w6_info_commands(session):
     await InfoService(session, deps).time_left(555)
     assert 'осталось' in deps.funpay.sent[-1][1]
     await InfoService(session, deps).stock(555)
-    assert 'Свободных' in deps.funpay.sent[-1][1]
+    # лот определён по активной аренде → ответ про этот лот + подсказка !free-all
+    assert '!free-all' in deps.funpay.sent[-1][1]
     await InfoService(session, deps).faq(555)
     assert 'Команды' in deps.funpay.sent[-1][1]
+
+
+async def test_free_before_purchase_uses_viewed_lot(session):
+    """!free до покупки: лот берём из «Покупатель смотрит» (funpay_lot_id)."""
+    lot = await seed_lot(session)
+    lot.funpay_lot_id = 999
+    await session.commit()
+    await seed_account(session, lot.id)
+    deps = make_deps()
+    deps.funpay.viewed_lot_id = 999  # покупатель смотрит этот оффер
+
+    await InfoService(session, deps).stock(777)  # активной аренды нет
+    text = deps.funpay.sent[-1][1]
+    assert lot.title in text and 'свободно' in text
+
+
+async def test_free_all_lists_every_lot(session):
+    lot = await seed_lot(session)
+    await seed_account(session, lot.id)
+    deps = make_deps()
+
+    await InfoService(session, deps).stock_all(123)
+    text = deps.funpay.sent[-1][1]
+    assert lot.title in text and 'шт.' in text
 
 
 async def _make_active_rental(session, deps):

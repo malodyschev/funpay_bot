@@ -39,4 +39,20 @@ class RefundService:
             id_=rental.account_id,
         )
         await sync_lot_visibility(self.session, self.deps, rental.lot_id)
+        if rental.chat_id is not None:
+            await self.deps.funpay.send_message(
+                rental.chat_id,
+                '✅ Возврат оформлен — средства вернутся на ваш баланс FunPay. '
+                'Доступ к аккаунту закрыт.',
+            )
         logger.info('order %s refunded, rental %s closed', order_id, rental.id)
+
+    async def decline(self, order_id: str) -> None:
+        """Отказ в возврате: уведомить покупателя (если у заказа есть чат)."""
+        rental = await self.rental_repo.get_by_order_id(order_id)
+        if rental and rental.chat_id is not None:
+            await self.deps.funpay.send_message(
+                rental.chat_id,
+                '↩️ Продавец отклонил запрос на возврат. '
+                'Если есть вопросы — напишите !admin.',
+            )

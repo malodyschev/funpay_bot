@@ -8,6 +8,8 @@ from app.rental.common.commands import (
     CODE_COMMANDS,
     EXTEND_COMMANDS,
     FAQ_COMMANDS,
+    REFUND_COMMANDS,
+    STOCK_ALL_COMMANDS,
     STOCK_COMMANDS,
     TIME_COMMANDS,
 )
@@ -51,8 +53,12 @@ async def on_new_message(event: NewMessageEvent) -> None:
             await InfoService(session, deps).send_credentials(event.chat_id)
         elif text in ADMIN_COMMANDS:
             await InfoService(session, deps).call_admin(event.chat_id)
+        elif text in REFUND_COMMANDS:
+            await InfoService(session, deps).request_refund(event.chat_id)
         elif text in EXTEND_COMMANDS:
             await InfoService(session, deps).extend_info(event.chat_id)
+        elif text in STOCK_ALL_COMMANDS:
+            await InfoService(session, deps).stock_all(event.chat_id)
         elif text in STOCK_COMMANDS:
             await InfoService(session, deps).stock(event.chat_id)
         elif text in TIME_COMMANDS:

@@ -85,3 +85,23 @@ class RealFunPayConnector(FunPayConnector):
 
         await self._call('set_lot_active', _toggle)
         logger.info('funpay lot %s active=%s', funpay_lot_id, active)
+
+    async def get_viewed_lot_id(self, chat_id: int) -> int | None:
+        """Лот из панели «Покупатель смотрит» (один GET-запрос chat/?node=).
+
+        Сбой/таймаут или покупатель не на странице лота → None (не роняем !free,
+        вызывающий покажет наличие по всем лотам).
+        """
+        def _fetch() -> str | None:
+            chat = self._account.get_chat(chat_id, with_history=False)
+            return getattr(chat, 'looking_link', None)
+
+        try:
+            link = await asyncio.to_thread(_fetch)
+        except Exception as exc:
+            logger.warning('get_viewed_lot_id failed for chat %s: %s', chat_id, exc)
+            return None
+        if not link:
+            return None
+        tail = link.rstrip('/').rsplit('=', 1)[-1]
+        return int(tail) if tail.isdigit() else None
