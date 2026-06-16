@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any
 
 from app.rental.admin_bot.notifier import AdminNotifier
 from app.rental.funpay.interface import FunPayConnector
@@ -19,6 +20,7 @@ class _Runtime:
     """Контейнер живых синглтонов, заполняется на старте приложения."""
 
     deps: RentalDeps | None = None
+    funpay_account: Any = None  # FunPayAPI.Account в боевом режиме (для синхронизации лотов)
 
     def get_deps(self) -> RentalDeps:
         if self.deps is None:

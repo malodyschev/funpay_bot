@@ -90,6 +90,15 @@ class RentalRepository(Repository[Rental]):
         """Активная аренда конкретного аккаунта (для карточки/действий админки)."""
         return await self.get_or_none(account_id=account_id, status=RentalStatusEnum.ACTIVE)
 
+    async def get_active_by_buyer(self, buyer_id: int) -> Sequence[Rental]:
+        """Активные аренды покупателя (для продления отдельным лотом)."""
+        query = (
+            sa.select(Rental)
+            .where(Rental.buyer_id == buyer_id, Rental.status == RentalStatusEnum.ACTIVE)
+            .order_by(Rental.expires_at)
+        )
+        return await self.scalars(query)
+
     async def count_active(self) -> int:
         """Число активных аренд (для дашборда)."""
         query = sa.select(sa.func.count(Rental.id)).where(

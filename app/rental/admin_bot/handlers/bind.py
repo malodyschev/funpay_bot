@@ -15,6 +15,7 @@ from app.rental.admin_bot.callbacks import BindAccount
 from app.rental.common.exceptions import DuplicateException, SteamModuleError
 from app.rental.services.account_loader import AccountLoaderService
 from app.rental.services.admin import AdminService
+from app.rental.services.lot_visibility import sync_lot_visibility
 from app.rental.steam.add_authenticator import (
     CODE_TYPE_DEVICE,
     CODE_TYPE_EMAIL,
@@ -195,7 +196,10 @@ async def bind_activation_code(message: Message, state: FSMContext) -> None:
                 revocation_code=data['revocation_code'],
                 device_id=data['device_id'],
             )
-            views = await AdminService(session, runtime.get_deps()).accounts_of_lot(lot_id)
+            svc = AdminService(session, runtime.get_deps())
+            views = await svc.accounts_of_lot(lot_id)
+            lot = await svc.get_lot(lot_id)
+            await sync_lot_visibility(session, runtime.get_deps(), lot_id)
     except DuplicateException as exc:
         await state.clear()
         await message.answer(f'⚠️ Аутентификатор привязан, но в пул не добавлен: {exc}')
@@ -204,5 +208,5 @@ async def bind_activation_code(message: Message, state: FSMContext) -> None:
     await state.clear()
     await message.answer(
         f'✅ Аккаунт #{account.id} ({account.login}) привязан и добавлен в лот.',
-        reply_markup=kb.lot_accounts(views, lot_id),
+        reply_markup=kb.lot_accounts(views, lot),
     )

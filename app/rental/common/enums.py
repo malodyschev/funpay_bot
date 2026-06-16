@@ -50,7 +50,8 @@ class RentalStatusEnum(StrEnum):
 
 @unique
 class ExtensionReasonEnum(StrEnum):
-    """Причина продления аренды (за отзыв или вручную админом)."""
+    """Причина продления аренды (за отзыв, вручную админом или покупкой лота)."""
 
     REVIEW = 'review'
     MANUAL = 'manual'
+    PURCHASE = 'purchase'

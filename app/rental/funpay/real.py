@@ -37,3 +37,12 @@ class RealFunPayConnector(FunPayConnector):
 
     async def refund_order(self, order_id: str) -> None:
         await asyncio.to_thread(self._account.refund, order_id)
+
+    async def set_lot_active(self, funpay_lot_id: int, active: bool) -> None:
+        def _toggle() -> None:
+            fields = self._account.get_lot_fields(funpay_lot_id)
+            fields.active = active
+            self._account.save_lot(fields)
+
+        await asyncio.to_thread(_toggle)
+        logger.info('funpay lot %s active=%s', funpay_lot_id, active)

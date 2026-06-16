@@ -44,18 +44,14 @@ async def _show_card(cb: CallbackQuery, account_id: int) -> None:
 async def open_lot(cb: CallbackQuery, callback_data: LotOpen) -> None:
     async with get_session() as session:
         svc = AdminService(session, runtime.get_deps())
+        lot = await svc.get_lot(callback_data.lot_id)
         views = await svc.accounts_of_lot(callback_data.lot_id)
-    if not views:
-        await cb.message.edit_text(
-            'В этом лоте нет аккаунтов.',
-            reply_markup=kb.lot_accounts([], callback_data.lot_id),
-        )
-        await cb.answer()
+    if not lot:
+        await cb.answer('Лот не найден', show_alert=True)
         return
-    title = views[0].lot.title if views[0].lot else 'Лот'
     await cb.message.edit_text(
-        f'🗂 <b>{html.escape(title)}</b> — {len(views)} аккаунт(ов):',
-        reply_markup=kb.lot_accounts(views, callback_data.lot_id),
+        fmt.fmt_lot(lot, len(views)),
+        reply_markup=kb.lot_accounts(views, lot),
     )
     await cb.answer()
 

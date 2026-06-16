@@ -8,6 +8,7 @@ from app.rental.common.enums import AccountStatusEnum, RentalStatusEnum
 from app.rental.repositories.account import AccountRepository
 from app.rental.repositories.rental import RentalRepository
 from app.rental.services.base import get_repository
+from app.rental.services.lot_visibility import sync_lot_visibility
 from app.runtime import RentalDeps
 
 
@@ -37,4 +38,5 @@ class RefundService:
             {'status': AccountStatusEnum.FREE},
             id_=rental.account_id,
         )
+        await sync_lot_visibility(self.session, self.deps, rental.lot_id)
         logger.info('order %s refunded, rental %s closed', order_id, rental.id)

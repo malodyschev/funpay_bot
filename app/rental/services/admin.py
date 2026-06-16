@@ -19,6 +19,7 @@ from app.rental.services.base import get_repository
 from app.rental.services.credentials import build_credentials
 from app.rental.services.expire_rental import ExpireRentalService
 from app.rental.services.extend_rental import ExtendRentalService
+from app.rental.services.lot_visibility import sync_lot_visibility
 from app.runtime import RentalDeps
 
 
@@ -98,6 +99,10 @@ class AdminService:
             out.append(LotStock(lot=lot, free=free, total=len(accounts)))
         return out
 
+    async def get_lot(self, lot_id: int) -> Lot | None:
+        """Лот по id."""
+        return await self.lot_repo.get_or_none(id_=lot_id)
+
     async def accounts_of_lot(self, lot_id: int) -> list[AccountView]:
         """Аккаунты лота с активной арендой каждого (если есть)."""
         lot = await self.lot_repo.get_or_none(id_=lot_id)
@@ -154,6 +159,7 @@ class AdminService:
         if rental:
             await self.rental_repo.update({'status': RentalStatusEnum.EXPIRED}, id_=rental.id)
         await self.account_repo.update({'status': AccountStatusEnum.FREE}, id_=account_id)
+        await self._sync_visibility(account_id)
         return 'Аккаунт освобождён (без деавторизации).'
 
     async def set_status(self, account_id: int, status: AccountStatusEnum) -> str:
@@ -162,7 +168,13 @@ class AdminService:
         if rental and status != AccountStatusEnum.RENTED:
             await self.rental_repo.update({'status': RentalStatusEnum.EXPIRED}, id_=rental.id)
         await self.account_repo.update({'status': status}, id_=account_id)
+        await self._sync_visibility(account_id)
         return f'Статус аккаунта изменён на {status.name}.'
+
+    async def _sync_visibility(self, account_id: int) -> None:
+        account = await self.account_repo.get_or_none(id_=account_id)
+        if account:
+            await sync_lot_visibility(self.session, self.deps, account.lot_id)
 
     async def extend(self, account_id: int, minutes: int) -> str:
         """Продлить активную аренду аккаунта на N минут."""
@@ -181,6 +193,20 @@ class AdminService:
         await self.account_repo.update({'notes': notes}, id_=account_id)
         return 'Заметка сохранена.'
 
+    async def set_lot_duration(self, lot_id: int, minutes: int) -> str:
+        """Задать длительность аренды лота (мин.)."""
+        await self.lot_repo.update({'duration_minutes': minutes}, id_=lot_id)
+        return f'Длительность лота: {minutes} мин.'
+
+    async def toggle_lot_active(self, lot_id: int) -> bool | None:
+        """Включить/выключить лот. Возвращает новое значение active (или None)."""
+        lot = await self.lot_repo.get_or_none(id_=lot_id)
+        if not lot:
+            return None
+        new_active = not lot.active
+        await self.lot_repo.update({'active': new_active}, id_=lot_id)
+        return new_active
+
     async def create_lot(
         self,
         *,
@@ -189,8 +215,9 @@ class AdminService:
         template: str,
         game: str | None = None,
         price: float | None = None,
+        is_extension: bool = False,
     ) -> Lot:
-        """Создать новый лот аренды."""
+        """Создать новый лот аренды (или лот-продление, если is_extension)."""
         return await self.lot_repo.create({
             'title': title,
             'game': game,
@@ -198,4 +225,5 @@ class AdminService:
             'price': price,
             'delivery_template': template,
             'active': True,
+            'is_extension': is_extension,
         })

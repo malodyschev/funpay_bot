@@ -17,4 +17,6 @@ class Extension(Base):
     rental_id: Mapped[int] = mapped_column(sa.ForeignKey('rentals.id'))
     minutes_added: Mapped[int] = mapped_column(sa.Integer)
     reason: Mapped[ExtensionReasonEnum] = mapped_column(EnumAsString(ExtensionReasonEnum))
+    # Заказ-продление FunPay (для идемпотентности); None для отзыва/ручного.
+    funpay_order_id: Mapped[str | None] = mapped_column(sa.Text, unique=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=datetime.now)

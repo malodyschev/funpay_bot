@@ -28,17 +28,20 @@ def upgrade() -> None:
     op.create_table('lots',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('funpay_node_id', sa.Integer(), nullable=True),
+    sa.Column('funpay_lot_id', sa.Integer(), nullable=True),
     sa.Column('title', sa.Text(), nullable=False),
     sa.Column('game', sa.Text(), nullable=True),
     sa.Column('duration_minutes', sa.Integer(), nullable=False),
     sa.Column('price', sa.Float(), nullable=True),
     sa.Column('delivery_template', sa.Text(), nullable=False),
     sa.Column('active', sa.Boolean(), nullable=False),
+    sa.Column('is_extension', sa.Boolean(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('title')
+    sa.UniqueConstraint('funpay_lot_id')
     )
+    op.create_index('ix_lots_title', 'lots', ['title'], unique=False)
     op.create_table('accounts',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('lot_id', sa.Integer(), nullable=False),
@@ -87,9 +90,11 @@ def upgrade() -> None:
     sa.Column('rental_id', sa.Integer(), nullable=False),
     sa.Column('minutes_added', sa.Integer(), nullable=False),
     sa.Column('reason', sa.String(length=32), nullable=False),
+    sa.Column('funpay_order_id', sa.Text(), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.ForeignKeyConstraint(['rental_id'], ['rentals.id'], ),
-    sa.PrimaryKeyConstraint('id')
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('funpay_order_id')
     )
     # ### end Alembic commands ###
 

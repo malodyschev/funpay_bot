@@ -3,6 +3,7 @@ import math
 from datetime import datetime
 
 from app.rental.common.enums import AccountStatusEnum
+from app.rental.models.lot import Lot
 from app.rental.services.admin import AccountView, Dashboard, LotStock, RentalView
 
 
@@ -81,11 +82,33 @@ def fmt_dashboard(dash: Dashboard, lots: list[LotStock]) -> str:
     if lots:
         lines += ['', _RULE, '🗂 <b>Остатки по лотам</b>']
         for ls in lots:
+            if ls.lot.is_extension:
+                lines.append(f'⏱ {html.escape(ls.lot.title)} — продление')
+                continue
             light = '🟢' if ls.free else '🔴'
             tail = ' — нет в наличии ⚠️' if not ls.free else ''
             lines.append(
                 f'{light} {html.escape(ls.lot.title)} · <b>{ls.free}</b>/{ls.total}{tail}',
             )
+    return '\n'.join(lines)
+
+
+def fmt_lot(lot: Lot, n_accounts: int) -> str:
+    """Шапка лота с конфигурацией (для экрана лота)."""
+    kind = '⏱ Продление' if lot.is_extension else '🎮 Аренда'
+    status = '🟢 активен' if lot.active else '⚪️ выключен'
+    dur = f'{lot.duration_minutes} мин.' + ('' if lot.duration_minutes else ' ⚠️ не задана')
+    lines = [
+        f'🗂 <b>{html.escape(lot.title)}</b>',
+        f'{kind} · {status}',
+        f'Длительность: {dur}',
+    ]
+    if lot.funpay_lot_id:
+        lines.append(f'FunPay оффер: <code>{lot.funpay_lot_id}</code>')
+    if not lot.is_extension:
+        lines.append(f'Аккаунтов: {n_accounts}')
+    if not lot.active:
+        lines.append('\n⚠️ Лот выключен — заказы по нему не обрабатываются.')
     return '\n'.join(lines)
 
 

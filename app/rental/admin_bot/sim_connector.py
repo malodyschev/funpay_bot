@@ -38,3 +38,8 @@ class TelegramSimFunPayConnector(FunPayConnector):
             f'↩️ <b>[FunPay]</b> возврат по заказу <code>{html.escape(order_id)}</code> '
             f'выполнен (симуляция).',
         )
+
+    async def set_lot_active(self, funpay_lot_id: int, active: bool) -> None:
+        state = 'показан' if active else 'скрыт'
+        logger.info('[sim funpay] lot %s active=%s', funpay_lot_id, active)
+        await self._broadcast(f'👁 <b>[FunPay]</b> лот {funpay_lot_id} {state} (симуляция).')

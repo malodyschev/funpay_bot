@@ -6,6 +6,7 @@ from app.rental.admin_bot.callbacks import (
     AddAccount,
     BindAccount,
     Extend,
+    LotAct,
     LotOpen,
     Menu,
     Refund,
@@ -13,6 +14,7 @@ from app.rental.admin_bot.callbacks import (
 )
 from app.rental.admin_bot.formatters import account_button_label, rental_button_label
 from app.rental.common.enums import AccountStatusEnum
+from app.rental.models.lot import Lot
 from app.rental.services.admin import AccountView, LotStock, RentalView
 
 
@@ -32,28 +34,49 @@ def back_to_menu() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
+def lot_kind() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text='🎮 Лот аренды', callback_data=Menu(action='add_lot_rental'))
+    kb.button(text='⏱ Лот продления', callback_data=Menu(action='add_lot_ext'))
+    kb.button(text='⬅️ Назад', callback_data=Menu(action='lots'))
+    kb.adjust(1)
+    return kb.as_markup()
+
+
 def lots_menu(lots: list[LotStock]) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     for ls in lots:
-        kb.button(
-            text=f'{ls.lot.title} ({ls.free}/{ls.total})',
-            callback_data=LotOpen(lot_id=ls.lot.id),
+        label = (
+            f'⏱ {ls.lot.title} (продление)'
+            if ls.lot.is_extension
+            else f'{ls.lot.title} ({ls.free}/{ls.total})'
         )
+        kb.button(text=label, callback_data=LotOpen(lot_id=ls.lot.id))
+    kb.button(text='🔄 Синхр. с FunPay', callback_data=Menu(action='sync'))
     kb.button(text='➕ Добавить лот', callback_data=Menu(action='add_lot'))
     kb.button(text='⬅️ В меню', callback_data=Menu(action='menu'))
     kb.adjust(1)
     return kb.as_markup()
 
 
-def lot_accounts(views: list[AccountView], lot_id: int) -> InlineKeyboardMarkup:
+def lot_accounts(views: list[AccountView], lot: Lot) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     for v in views:
         kb.button(
             text=account_button_label(v),
             callback_data=Acc(action='open', account_id=v.account.id),
         )
-    kb.button(text='🔑 Привязать (логин+пароль)', callback_data=BindAccount(lot_id=lot_id))
-    kb.button(text='📄 Добавить по maFile', callback_data=AddAccount(lot_id=lot_id))
+    kb.button(
+        text=f'⏱ Длительность ({lot.duration_minutes} мин)',
+        callback_data=LotAct(action='duration', lot_id=lot.id),
+    )
+    kb.button(
+        text='⚪️ Выключить лот' if lot.active else '🟢 Включить лот',
+        callback_data=LotAct(action='toggle_active', lot_id=lot.id),
+    )
+    if not lot.is_extension:
+        kb.button(text='🔑 Привязать (логин+пароль)', callback_data=BindAccount(lot_id=lot.id))
+        kb.button(text='📄 Добавить по maFile', callback_data=AddAccount(lot_id=lot.id))
     kb.button(text='⬅️ К лотам', callback_data=Menu(action='lots'))
     kb.adjust(1)
     return kb.as_markup()

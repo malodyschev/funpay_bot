@@ -42,11 +42,18 @@ class ExtendRentalService:
         rental_id: int,
         minutes: int,
         reason: ExtensionReasonEnum,
+        order_id: str | None = None,
     ) -> None:
-        """Extend an active rental by internal id (admin command)."""
-        await self._extend(rental_id, minutes, reason)
+        """Extend an active rental by internal id (admin command / purchase)."""
+        await self._extend(rental_id, minutes, reason, order_id)
 
-    async def _extend(self, rental_id: int, minutes: int, reason: ExtensionReasonEnum) -> None:
+    async def _extend(
+        self,
+        rental_id: int,
+        minutes: int,
+        reason: ExtensionReasonEnum,
+        order_id: str | None = None,
+    ) -> None:
         rental = await self.rental_repo.get_or_none(id_=rental_id)
         if not rental or rental.status != RentalStatusEnum.ACTIVE:
             logger.info('rental %s is not active, skip extension', rental_id)
@@ -65,6 +72,7 @@ class ExtendRentalService:
             'rental_id': rental.id,
             'minutes_added': minutes,
             'reason': reason,
+            'funpay_order_id': order_id,
         })
 
         if rental.chat_id is not None:

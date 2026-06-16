@@ -55,3 +55,10 @@ class BindAccount(CallbackData, prefix='bindacc'):
     """Начать авто-привязку аутентификатора (логин+пароль+коды) в лот."""
 
     lot_id: int
+
+
+class LotAct(CallbackData, prefix='la'):
+    """Действие над лотом: action=duration|toggle_active, lot_id."""
+
+    action: str
+    lot_id: int

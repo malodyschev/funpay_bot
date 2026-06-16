@@ -1,4 +1,5 @@
 import asyncio
+import itertools
 from logging import getLogger
 
 import FunPayAPI
@@ -16,6 +17,9 @@ from app.rental.services.dispatcher import (
 logger = getLogger(__name__)
 settings = get_settings()
 
+# Уникальные id для message-событий из LastChatMessageChangedEvent (там id нет).
+_msg_counter = itertools.count(1)
+
 
 async def run_funpay_listener(account: FunPayAPI.Account) -> None:
     """Слушать события FunPay (Runner) и подавать их в наш диспетчер.
@@ -23,11 +27,16 @@ async def run_funpay_listener(account: FunPayAPI.Account) -> None:
     Runner синхронный и блокирующий, поэтому крутим его в отдельном потоке,
     а каждое событие пробрасываем в основной event-loop через
     run_coroutine_threadsafe (обрабатываем по одному, последовательно).
+
+    disable_message_requests=True: НЕ тянем полную историю чата (этот запрос
+    у FunPayAPI хрупкий и валится на отдельных чатах) — реагируем на
+    LastChatMessageChangedEvent, где есть chat_id, текст и тип последнего
+    сообщения. Этого хватает для команд (!код) и отзывов.
     """
     loop = asyncio.get_running_loop()
 
     def worker() -> None:
-        runner = Runner(account)
+        runner = Runner(account, disable_message_requests=True)
         for event in runner.listen(requests_delay=settings.funpay_requests_delay):
             try:
                 asyncio.run_coroutine_threadsafe(_handle(account, event), loop).result()
@@ -41,6 +50,8 @@ async def run_funpay_listener(account: FunPayAPI.Account) -> None:
 async def _handle(account: FunPayAPI.Account, event) -> None:
     if isinstance(event, events.NewOrderEvent):
         await _handle_order(account, event.order)
+    elif isinstance(event, events.LastChatMessageChangedEvent):
+        await _handle_chat_changed(event.chat)
     elif isinstance(event, events.NewMessageEvent):
         await _handle_message(account, event.message)
 
@@ -57,6 +68,26 @@ async def _handle_order(account: FunPayAPI.Account, order) -> None:
         buyer_id=order.buyer_id,
         buyer_username=order.buyer_username,
         chat_id=chat.id,
+    ))
+
+
+async def _handle_chat_changed(chat) -> None:
+    """Изменилось последнее сообщение чата → команда (!код) или отзыв.
+
+    В режиме без запросов истории нет author_id, поэтому реагируем только на
+    распознанные команды. Наши собственные ответы командами не являются —
+    диспетчер их игнорирует, цикла не возникает.
+    """
+    if chat.last_message_type == enums.MessageTypes.NEW_FEEDBACK:
+        await on_new_review_by_chat(chat.id)
+        return
+    if chat.last_message_type not in (enums.MessageTypes.NON_SYSTEM, None):
+        return  # прочие системные сообщения (покупка, возврат и т.п.)
+    await on_new_message(NewMessageEvent(
+        chat_id=chat.id,
+        message_id=next(_msg_counter),
+        author_id=1,  # author неизвестен; диспетчер фильтрует по тексту команды
+        text=chat.last_message_text or '',
     ))
 
 

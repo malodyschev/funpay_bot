@@ -16,11 +16,18 @@ from app.rental.repositories.account import AccountRepository
 from app.rental.repositories.rental import RentalRepository
 from app.rental.services.base import get_repository
 from app.rental.services.credentials import build_credentials
+from app.rental.services.lot_visibility import sync_lot_visibility
 from app.runtime import RentalDeps
 
 
 logger = getLogger(__name__)
 settings = get_settings()
+
+_EXPIRY_MESSAGE = (
+    'Аренда окончена ⏳\n'
+    'Доступ к аккаунту закрыт. Спасибо, что воспользовались услугой!\n'
+    'Чтобы арендовать снова - оформите новый заказ.'
+)
 
 
 @dataclass
@@ -45,6 +52,8 @@ class ExpireRentalService:
         if account.type == AccountTypeEnum.OFFLINE:
             await self.account_repo.update({'status': AccountStatusEnum.FREE}, id_=account.id)
             await self.rental_repo.update({'status': RentalStatusEnum.EXPIRED}, id_=rental.id)
+            await sync_lot_visibility(self.session, self.deps, account.lot_id)
+            await self._notify_buyer(rental.chat_id)
             logger.info('offline rental %s expired, account %s freed', rental.id, account.id)
             return
 
@@ -64,12 +73,22 @@ class ExpireRentalService:
 
         await self.account_repo.update({'status': AccountStatusEnum.FREE}, id_=account.id)
         await self.rental_repo.update({'status': RentalStatusEnum.EXPIRED}, id_=rental.id)
+        await sync_lot_visibility(self.session, self.deps, account.lot_id)
+        await self._notify_buyer(rental.chat_id)
         logger.info(
             'rental %s expired, account %s sessions deauthorized and freed',
             rental.id,
-
             account.id,
         )
+
+    async def _notify_buyer(self, chat_id: int | None) -> None:
+        """Сообщить покупателю в чат FunPay, что аренда окончена."""
+        if chat_id is None:
+            return
+        try:
+            await self.deps.funpay.send_message(chat_id, _EXPIRY_MESSAGE)
+        except Exception:
+            logger.exception('failed to notify buyer about expiry (chat %s)', chat_id)
 
     async def _deauthorize_with_retries(self, account: Account) -> bool:
         """Try to deauthorize the account's sessions with exponential backoff."""

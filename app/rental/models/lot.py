@@ -12,13 +12,17 @@ class Lot(Base):
     __tablename__ = 'lots'
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    funpay_node_id: Mapped[int | None] = mapped_column(sa.Integer)
-    title: Mapped[str] = mapped_column(sa.Text, unique=True)
+    funpay_node_id: Mapped[int | None] = mapped_column(sa.Integer)  # подкатегория FunPay
+    funpay_lot_id: Mapped[int | None] = mapped_column(sa.Integer, unique=True)  # оффер FunPay
+    # Название НЕ уникально: несколько офферов (=лотов) могут называться одинаково.
+    title: Mapped[str] = mapped_column(sa.Text, index=True)
     game: Mapped[str | None] = mapped_column(sa.Text)
     duration_minutes: Mapped[int] = mapped_column(sa.Integer)
     price: Mapped[float | None] = mapped_column(sa.Float)
     delivery_template: Mapped[str] = mapped_column(sa.Text)
     active: Mapped[bool] = mapped_column(sa.Boolean, default=True)
+    # Лот-продление: заказ добавляет время к активной аренде, не выдаёт аккаунт.
+    is_extension: Mapped[bool] = mapped_column(sa.Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(
         sa.DateTime,

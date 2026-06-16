@@ -356,3 +356,163 @@ async def test_admin_extend_and_notes_and_reveal(session):
     assert creds.login == account.login
     assert creds.password == 'old_password'  # из seed_account
     assert creds.code == 'ABCDE'  # FakeSteamModule
+
+
+async def test_extension_lot_extends_active_rental(session):
+    lot = await seed_lot(session)
+    await seed_account(session, lot.id)
+    deps = make_deps()
+    await NewOrderService(session, deps).handle(order_event())
+    rental = await RentalRepository(session).get_by_order_id('ORDER-1')
+    old_expires = rental.expires_at
+
+    ext_lot = Lot(
+        title='Продление +30',
+        duration_minutes=30,
+        delivery_template='-',
+        active=True,
+        is_extension=True,
+    )
+    session.add(ext_lot)
+    await session.commit()
+
+    ext_event = NewOrderEvent(
+        order_id='ORDER-EXT',
+        lot_title='Продление +30',
+        buyer_id=42,
+        buyer_username='buyer',
+        chat_id=555,
+    )
+    await NewOrderService(session, deps).handle(ext_event)
+
+    updated = await RentalRepository(session).get(rental.id)
+    assert updated.expires_at == old_expires + timedelta(minutes=30)
+    assert updated.extended_minutes == 30
+
+    # тот же заказ-продление повторно → без двойного продления (идемпотентность)
+    await NewOrderService(session, deps).handle(ext_event)
+    again = await RentalRepository(session).get(rental.id)
+    assert again.expires_at == old_expires + timedelta(minutes=30)
+
+
+async def test_extension_without_active_rental_alerts(session):
+    await seed_lot(session)
+    deps = make_deps()
+    ext_lot = Lot(
+        title='Продление +30',
+        duration_minutes=30,
+        delivery_template='-',
+        active=True,
+        is_extension=True,
+    )
+    session.add(ext_lot)
+    await session.commit()
+
+    await NewOrderService(session, deps).handle(NewOrderEvent(
+        order_id='ORDER-EXT',
+        lot_title='Продление +30',
+        buyer_id=999,
+        buyer_username='nobody',
+        chat_id=777,
+    ))
+
+    assert len(deps.notifier.messages) == 1  # алерт «продление без аренды»
+    assert any('нет активной аренды' in t for _, t in deps.funpay.sent)
+
+
+async def test_sync_lots_creates_draft_and_updates(session):
+    from types import SimpleNamespace as N
+
+    from app.rental.funpay.lot_sync import sync_lots
+    from app.rental.repositories.lot import LotRepository
+
+    fp_lot = N(id=12345, title='Аренда CS2', description='d', price=100.0, subcategory=N(id=999))
+    account = N(id=1, get_user=lambda uid: N(get_lots=lambda: [fp_lot]))
+
+    created, updated = await sync_lots(session, account)
+    assert (created, updated) == (1, 0)
+    lot = await LotRepository(session).get_or_none(funpay_lot_id=12345)
+    assert lot.title == 'Аренда CS2'
+    assert lot.active is False  # черновик, пока не настроен
+    assert lot.duration_minutes == 0
+    assert lot.funpay_node_id == 999
+
+    # повторная синхронизация → апдейт, не дубль
+    fp_lot.price = 150.0
+    created2, updated2 = await sync_lots(session, account)
+    assert (created2, updated2) == (0, 1)
+    refreshed = await LotRepository(session).get_or_none(funpay_lot_id=12345)
+    assert refreshed.price == 150.0
+
+
+async def test_lot_auto_hide_on_sale_and_show_on_return(session):
+    lot = Lot(
+        title='CS2 аренда',
+        game='CS2',
+        duration_minutes=60,
+        delivery_template='Логин: {login} Пароль: {password}',
+        active=True,
+        funpay_lot_id=555,
+    )
+    session.add(lot)
+    await session.commit()
+    await seed_account(session, lot.id)
+    deps = make_deps()
+
+    order = NewOrderEvent(
+        order_id='O1', lot_title='CS2 аренда', buyer_id=7, buyer_username='b', chat_id=70,
+    )
+    await NewOrderService(session, deps).handle(order)
+    assert deps.funpay.lot_active[-1] == (555, False)  # распродан → скрыт
+
+    rental = await RentalRepository(session).get_by_order_id('O1')
+    await ExpireRentalService(session, deps).handle(rental.id)
+    assert deps.funpay.lot_active[-1] == (555, True)  # вернулся → показан
+
+
+def _free_account(lot_id, login, steam_id):
+    return Account(
+        lot_id=lot_id, login=login, password_enc=encrypt('p'), steam_id=steam_id,
+        shared_secret_enc=encrypt('s'), identity_secret_enc=encrypt('i'),
+        status=AccountStatusEnum.FREE, type=AccountTypeEnum.ONLINE,
+    )
+
+
+async def test_two_lots_same_title_rent_independently(session):
+    deps = make_deps()
+    lot_a = Lot(title='CS2', duration_minutes=60, delivery_template='{login}/{password}',
+                active=True, funpay_lot_id=11)
+    lot_b = Lot(title='CS2', duration_minutes=60, delivery_template='{login}/{password}',
+                active=True, funpay_lot_id=22)
+    session.add_all([lot_a, lot_b])
+    await session.commit()
+    session.add_all([_free_account(lot_a.id, 'l1', 's1'), _free_account(lot_b.id, 'l2', 's2')])
+    await session.commit()
+
+    await NewOrderService(session, deps).handle(
+        NewOrderEvent(order_id='O1', lot_title='CS2', buyer_id=1, buyer_username='b1', chat_id=1))
+    await NewOrderService(session, deps).handle(
+        NewOrderEvent(order_id='O2', lot_title='CS2', buyer_id=2, buyer_username='b2', chat_id=2))
+
+    rentals = await RentalRepository(session).get_active()
+    assert len(rentals) == 2  # две аренды на два разных аккаунта/лота
+    assert {r.lot_id for r in rentals} == {lot_a.id, lot_b.id}
+    assert (11, False) in deps.funpay.lot_active
+    assert (22, False) in deps.funpay.lot_active
+
+
+async def test_sync_creates_separate_lots_for_same_title(session):
+    from types import SimpleNamespace as N
+
+    from app.rental.funpay.lot_sync import sync_lots
+    from app.rental.repositories.lot import LotRepository
+
+    fp1 = N(id=11, title='CS2', description='d', price=10.0, subcategory=N(id=1))
+    fp2 = N(id=22, title='CS2', description='d', price=10.0, subcategory=N(id=1))
+    account = N(id=1, get_user=lambda uid: N(get_lots=lambda: [fp1, fp2]))
+
+    created, updated = await sync_lots(session, account)
+    assert (created, updated) == (2, 0)
+    lots = await LotRepository(session).get_all(title='CS2')
+    assert len(lots) == 2
+    assert {lot.funpay_lot_id for lot in lots} == {11, 22}

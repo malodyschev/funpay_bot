@@ -18,3 +18,5 @@ database.db
 
 logs/
 *.log
+
+.claude/settings.local.json

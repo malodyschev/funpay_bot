@@ -15,3 +15,7 @@ class FunPayConnector(ABC):
     @abstractmethod
     async def refund_order(self, order_id: str) -> None:
         """Вернуть средства по заказу."""
+
+    @abstractmethod
+    async def set_lot_active(self, funpay_lot_id: int, active: bool) -> None:
+        """Показать/скрыть лот на FunPay (авто-скрытие при продаже)."""
