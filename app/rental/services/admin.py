@@ -94,6 +94,8 @@ class AdminService:
         lots = await self.lot_repo.get_all()
         out: list[LotStock] = []
         for lot in lots:
+            if lot.removed:
+                continue  # удалён на FunPay — в админке не показываем
             accounts = await self.account_repo.list_by_lot(lot.id)
             free = sum(1 for a in accounts if a.status == AccountStatusEnum.FREE)
             out.append(LotStock(lot=lot, free=free, total=len(accounts)))
@@ -218,12 +220,13 @@ class AdminService:
         return f'Длительность лота: {minutes} мин.'
 
     async def toggle_lot_active(self, lot_id: int) -> bool | None:
-        """Включить/выключить лот. Возвращает новое значение active (или None)."""
+        """Включить/выключить лот + показать/скрыть оффер на FunPay."""
         lot = await self.lot_repo.get_or_none(id_=lot_id)
         if not lot:
             return None
         new_active = not lot.active
         await self.lot_repo.update({'active': new_active}, id_=lot_id)
+        await sync_lot_visibility(self.session, self.deps, lot_id)
         return new_active
 
     async def create_lot(

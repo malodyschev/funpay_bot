@@ -36,6 +36,7 @@ def upgrade() -> None:
     sa.Column('delivery_template', sa.Text(), nullable=False),
     sa.Column('active', sa.Boolean(), nullable=False),
     sa.Column('is_extension', sa.Boolean(), nullable=False),
+    sa.Column('removed', sa.Boolean(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.PrimaryKeyConstraint('id'),

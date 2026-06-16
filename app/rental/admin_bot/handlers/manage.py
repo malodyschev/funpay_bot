@@ -53,10 +53,10 @@ async def sync_funpay_lots(cb: CallbackQuery) -> None:
         return
     await cb.answer('Синхронизирую с FunPay…')
     async with get_session() as session:
-        created, updated, deactivated = await sync_lots(session, account)
+        sync_result = await sync_lots(session, account)
         lots = await AdminService(session, runtime.get_deps()).lots_with_stock()
     await cb.message.answer(
-        f'🔄 FunPay: создано {created}, обновлено {updated}, выключено {deactivated}.\n'
+        f'🔄 FunPay: {sync_result.summary()}.\n'
         'Новые лоты выключены — задай длительность, привяжи аккаунт и включи.',
         reply_markup=kb.lots_menu(lots),
     )

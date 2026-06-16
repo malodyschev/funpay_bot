@@ -426,23 +426,28 @@ async def test_sync_lots_creates_draft_and_updates(session):
     from app.rental.funpay.lot_sync import sync_lots
     from app.rental.repositories.lot import LotRepository
 
-    fp_lot = N(id=12345, title='Аренда CS2', description='d', price=100.0, subcategory=N(id=999))
-    account = N(id=1, get_user=lambda uid: N(get_lots=lambda: [fp_lot]))
+    fp_lot = N(id=12345, active=True, description='Аренда CS2', price=100.0, subcategory=N(id=999))
+    account = N(
+        id=1,
+        get_user=lambda uid: N(get_lots=lambda: [fp_lot]),
+        get_my_subcategory_lots=lambda sid: [fp_lot],
+    )
 
-    created, updated, _ = await sync_lots(session, account)
-    assert (created, updated) == (1, 0)
+    result = await sync_lots(session, account)
+    assert (result.created, result.updated) == (1, 0)
     lot = await LotRepository(session).get_or_none(funpay_lot_id=12345)
     assert lot.title == 'Аренда CS2'
     assert lot.active is False  # черновик, пока не настроен
     assert lot.duration_minutes == 0
     assert lot.funpay_node_id == 999
 
-    # повторная синхронизация → апдейт, не дубль
+    # повторная синхронизация → апдейт, не дубль, активацию не навязывает
     fp_lot.price = 150.0
-    created2, updated2, _ = await sync_lots(session, account)
-    assert (created2, updated2) == (0, 1)
+    result2 = await sync_lots(session, account)
+    assert (result2.created, result2.updated) == (0, 1)
     refreshed = await LotRepository(session).get_or_none(funpay_lot_id=12345)
     assert refreshed.price == 150.0
+    assert refreshed.active is False
 
 
 async def test_lot_auto_hide_on_sale_and_show_on_return(session):
@@ -507,12 +512,16 @@ async def test_sync_creates_separate_lots_for_same_title(session):
     from app.rental.funpay.lot_sync import sync_lots
     from app.rental.repositories.lot import LotRepository
 
-    fp1 = N(id=11, title='CS2', description='d', price=10.0, subcategory=N(id=1))
-    fp2 = N(id=22, title='CS2', description='d', price=10.0, subcategory=N(id=1))
-    account = N(id=1, get_user=lambda uid: N(get_lots=lambda: [fp1, fp2]))
+    fp1 = N(id=11, active=True, description='CS2', price=10.0, subcategory=N(id=1))
+    fp2 = N(id=22, active=True, description='CS2', price=10.0, subcategory=N(id=1))
+    account = N(
+        id=1,
+        get_user=lambda uid: N(get_lots=lambda: [fp1, fp2]),
+        get_my_subcategory_lots=lambda sid: [fp1, fp2],
+    )
 
-    created, updated, _ = await sync_lots(session, account)
-    assert (created, updated) == (2, 0)
+    result = await sync_lots(session, account)
+    assert (result.created, result.updated) == (2, 0)
     lots = await LotRepository(session).get_all(title='CS2')
     assert len(lots) == 2
     assert {lot.funpay_lot_id for lot in lots} == {11, 22}

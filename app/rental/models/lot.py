@@ -23,6 +23,8 @@ class Lot(Base):
     active: Mapped[bool] = mapped_column(sa.Boolean, default=True)
     # Лот-продление: заказ добавляет время к активной аренде, не выдаёт аккаунт.
     is_extension: Mapped[bool] = mapped_column(sa.Boolean, default=False)
+    # Оффер удалён на FunPay — в админке не показываем (но запись храним ради истории).
+    removed: Mapped[bool] = mapped_column(sa.Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(
         sa.DateTime,

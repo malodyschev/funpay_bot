@@ -27,11 +27,14 @@ async def sync_lot_visibility(session: AsyncSession, deps: RentalDeps, lot_id: i
         logger.warning('lot %s ("%s") без funpay_lot_id — видимость не меняем', lot_id, lot.title)
         return
     free = await AccountRepository(session).count_free(lot_id)
+    # Виден на FunPay = лот включён у нас И есть свободные аккаунты.
+    # Выключенный (или распроданный) лот скрываем.
+    want_active = lot.active and free > 0
     try:
-        await deps.funpay.set_lot_active(lot.funpay_lot_id, free > 0)
+        await deps.funpay.set_lot_active(lot.funpay_lot_id, want_active)
     except Exception as exc:
         logger.exception('failed to sync FunPay visibility for lot %s', lot_id)
-        action = 'показать' if free > 0 else 'скрыть'
+        action = 'показать' if want_active else 'скрыть'
         with contextlib.suppress(Exception):
             await deps.notifier.notify(
                 f'⚠️ Не удалось {action} лот "{lot.title}" на FunPay '

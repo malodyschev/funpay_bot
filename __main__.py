@@ -46,6 +46,7 @@ _SCHEMA_PATCHES = (
     'ALTER TABLE accounts ADD COLUMN IF NOT EXISTS revocation_code_enc BYTEA',
     'ALTER TABLE rentals ADD COLUMN IF NOT EXISTS warned BOOLEAN NOT NULL DEFAULT FALSE',
     'ALTER TABLE lots ADD COLUMN IF NOT EXISTS is_extension BOOLEAN NOT NULL DEFAULT FALSE',
+    'ALTER TABLE lots ADD COLUMN IF NOT EXISTS removed BOOLEAN NOT NULL DEFAULT FALSE',
     'ALTER TABLE lots ADD COLUMN IF NOT EXISTS funpay_lot_id INTEGER',
     'ALTER TABLE extensions ADD COLUMN IF NOT EXISTS funpay_order_id TEXT',
     # Название лота больше не уникально (несколько офферов с одним именем).
@@ -200,11 +201,8 @@ async def _run() -> None:
     if account is not None:
         try:
             async with get_session() as session:
-                created, updated, deactivated = await sync_lots(session, account)
-            logger.info(
-                'startup funpay lot sync: created=%s updated=%s deactivated=%s',
-                created, updated, deactivated,
-            )
+                sync_result = await sync_lots(session, account)
+            logger.info('startup funpay lot sync: %s', sync_result.summary())
         except Exception:
             logger.exception('startup funpay lot sync failed')
 

@@ -3,7 +3,10 @@ from logging import getLogger
 from app.config import get_settings
 from app.database import get_session
 from app.rental.common.commands import (
+    ACC_COMMANDS,
+    ADMIN_COMMANDS,
     CODE_COMMANDS,
+    EXTEND_COMMANDS,
     FAQ_COMMANDS,
     STOCK_COMMANDS,
     TIME_COMMANDS,
@@ -44,10 +47,16 @@ async def on_new_message(event: NewMessageEvent) -> None:
     async with get_session() as session:
         if text in CODE_COMMANDS:
             await GuardCodeService(session, deps).handle(event)
-        elif text in TIME_COMMANDS:
-            await InfoService(session, deps).time_left(event.chat_id)
+        elif text in ACC_COMMANDS:
+            await InfoService(session, deps).send_credentials(event.chat_id)
+        elif text in ADMIN_COMMANDS:
+            await InfoService(session, deps).call_admin(event.chat_id)
+        elif text in EXTEND_COMMANDS:
+            await InfoService(session, deps).extend_info(event.chat_id)
         elif text in STOCK_COMMANDS:
             await InfoService(session, deps).stock(event.chat_id)
+        elif text in TIME_COMMANDS:
+            await InfoService(session, deps).time_left(event.chat_id)
         elif text in FAQ_COMMANDS:
             await InfoService(session, deps).faq(event.chat_id)
 

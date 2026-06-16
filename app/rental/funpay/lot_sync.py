@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import dataclass
 from logging import getLogger
 
 import FunPayAPI
@@ -12,88 +13,124 @@ from app.rental.repositories.lot import LotRepository
 logger = getLogger(__name__)
 
 
-async def sync_lots(session: AsyncSession, account: FunPayAPI.Account) -> tuple[int, int, int]:
-    """Полная синхронизация офферов продавца с FunPay.
+@dataclass
+class SyncResult:
+    """Итоги синхронизации лотов с FunPay."""
 
-    Новый оффер → ЧЕРНОВИК лота (active=False, duration=0): донастроить в
-    админке (длительность+аккаунт) и включить. Существующий → обновляем
-    title/price. Пропавший из активных на FunPay (удалён/деактивирован
-    продавцом) → помечаем active=False у нас. Исключение — наш авто-скрытый
-    при распродаже лот (free=0): он тоже исчезает из активных на FunPay,
-    но это наша скрытка, его не трогаем.
+    created: int = 0  # новые офферы → черновики
+    updated: int = 0  # обновлены/реактивированы
+    deactivated: int = 0  # продавец выключил оффер → у нас неактивен
+    removed: int = 0  # оффер удалён на FunPay → скрыт из админки
 
-    Returns:
-        (создано, обновлено, деактивировано).
-    """
-    profile = await asyncio.to_thread(account.get_user, account.id)
-    fp_lots = await asyncio.to_thread(profile.get_lots)
-
-    repo = LotRepository(session)
-    created = updated = 0
-    fetched_ids: set[int] = set()
-    for fp in fp_lots:
-        fetched_ids.add(fp.id)
-        try:
-            if await _upsert_lot(repo, fp):
-                created += 1
-            else:
-                updated += 1
-        except Exception:
-            # Одна проблемная запись не должна ронять синк целиком.
-            logger.exception('sync: не удалось обработать оффер %s', getattr(fp, 'id', '?'))
-            await session.rollback()
-
-    deactivated = await _deactivate_removed(session, fetched_ids)
-    logger.info(
-        'funpay lot sync: created=%s updated=%s deactivated=%s', created, updated, deactivated,
-    )
-    return created, updated, deactivated
+    def summary(self) -> str:
+        return (
+            f'создано {self.created}, обновлено {self.updated}, '
+            f'выключено {self.deactivated}, удалено {self.removed}'
+        )
 
 
-async def _deactivate_removed(session: AsyncSession, fetched_ids: set[int]) -> int:
-    """Выключить наши активные лоты, пропавшие из активных на FunPay.
+async def sync_lots(session: AsyncSession, account: FunPayAPI.Account) -> SyncResult:
+    """Полная сверка офферов продавца 1-в-1 с FunPay.
 
-    Если у лота есть свободные аккаунты, но его нет среди активных офферов —
-    значит продавец его убрал/деактивировал. Распроданные (free=0) не трогаем:
-    это наш авто-hide, оффер вернётся при освобождении аккаунта.
+    Источник — страница управления лотами (`get_my_subcategory_lots`), которая
+    видит И активные, И неактивные офферы (публичный профиль — только активные).
+
+    - оффер активен → лот активен;
+    - оффер неактивен → лот неактивен (показываем, помечен), КРОМЕ случая нашей
+      авто-скрытки распроданного (free=0) — тогда оставляем активным;
+    - оффер удалён (исчез из подкатегории) → лот removed=True (в админке не виден);
+    - новый оффер → черновик (active=False): донастроить длительность+аккаунт.
     """
     repo = LotRepository(session)
     account_repo = AccountRepository(session)
-    deactivated = 0
-    for lot in await repo.active_linked():
-        if lot.funpay_lot_id in fetched_ids:
+
+    # Подкатегории: где есть активные офферы + где есть наши привязанные лоты.
+    profile = await asyncio.to_thread(account.get_user, account.id)
+    active_lots = await asyncio.to_thread(profile.get_lots)
+    subcat_ids: set[int] = {
+        sub.id for lot in active_lots if (sub := getattr(lot, 'subcategory', None)) and sub.id
+    }
+    for lot in await repo.linked():
+        if lot.funpay_node_id:
+            subcat_ids.add(lot.funpay_node_id)
+
+    # Полный список офферов по подкатегориям (только успешно загруженные сверяем).
+    offers: dict[int, object] = {}
+    fetched_subcats: set[int] = set()
+    for sub_id in subcat_ids:
+        try:
+            my_lots = await asyncio.to_thread(account.get_my_subcategory_lots, sub_id)
+        except Exception:
+            logger.exception('sync: не удалось получить лоты подкатегории %s', sub_id)
             continue
-        if await account_repo.count_free(lot.id) > 0:
-            await repo.update({'active': False}, id_=lot.id)
-            deactivated += 1
-    return deactivated
+        fetched_subcats.add(sub_id)
+        for offer in my_lots:
+            offers[int(offer.id)] = offer
+
+    result = SyncResult()
+    for offer in offers.values():
+        try:
+            await _upsert_offer(repo, account_repo, offer, result)
+        except Exception:
+            logger.exception('sync: не удалось обработать оффер %s', getattr(offer, 'id', '?'))
+            await session.rollback()
+
+    # Удалённые: наши привязанные лоты, чья подкатегория загрузилась, но оффер исчез.
+    for lot in await repo.linked():
+        if lot.removed or lot.funpay_node_id not in fetched_subcats:
+            continue
+        if int(lot.funpay_lot_id) not in offers:
+            await repo.update({'removed': True, 'active': False}, id_=lot.id)
+            result.removed += 1
+
+    logger.info('funpay lot sync: %s', result.summary())
+    return result
 
 
-async def _upsert_lot(repo: LotRepository, fp) -> bool:
-    """Создать/обновить лот по одному офферу FunPay. True — если создан новый."""
-    existing = await repo.get_or_none(funpay_lot_id=fp.id)
-    if existing:
-        await repo.update(
-            {'title': fp.title or existing.title, 'price': fp.price},
-            id_=existing.id,
-        )
-        return False
+async def _upsert_offer(
+    repo: LotRepository,
+    account_repo: AccountRepository,
+    offer: object,
+    result: SyncResult,
+) -> None:
+    """Создать/обновить лот по офферу из get_my_subcategory_lots."""
+    offer_id = int(offer.id)
+    title = (getattr(offer, 'description', None) or f'lot {offer_id}')[:500]
+    fp_active = bool(getattr(offer, 'active', True))
+    sub_id = getattr(getattr(offer, 'subcategory', None), 'id', None)
 
-    # Есть НЕпривязанный лот с таким названием (создан вручную) → привязываем.
-    # Названия не уникальны: другие офферы с тем же именем создадутся отдельно.
-    unlinked = await repo.get_unlinked_by_title(fp.title) if fp.title else None
-    if unlinked:
-        await repo.update({'funpay_lot_id': fp.id, 'price': fp.price}, id_=unlinked.id)
-        return False
+    existing = await repo.get_or_none(funpay_lot_id=offer_id)
+    if not existing:
+        # привязать к ручному непривязанному лоту с тем же названием, иначе создать
+        unlinked = await repo.get_unlinked_by_title(title)
+        if unlinked:
+            await repo.update(
+                {'funpay_lot_id': offer_id, 'funpay_node_id': sub_id, 'removed': False},
+                id_=unlinked.id,
+            )
+            result.updated += 1
+        else:
+            await repo.create({
+                'funpay_lot_id': offer_id,
+                'funpay_node_id': sub_id,
+                'title': title,
+                'price': getattr(offer, 'price', None),
+                'duration_minutes': 0,
+                'delivery_template': DEFAULT_DELIVERY_TEMPLATE,
+                'active': False,  # черновик — донастроить и включить
+                'is_extension': False,
+                'removed': False,
+            })
+            result.created += 1
+        return
 
-    await repo.create({
-        'funpay_lot_id': fp.id,
-        'funpay_node_id': getattr(fp.subcategory, 'id', None),
-        'title': fp.title or f'lot {fp.id}',
-        'price': fp.price,
-        'duration_minutes': 0,
-        'delivery_template': DEFAULT_DELIVERY_TEMPLATE,
-        'active': False,
-        'is_extension': False,
-    })
-    return True
+    # Лот уже есть. Синк только ДЕАКТИВИРУЕТ (отражает выключение продавцом);
+    # активацию НЕ навязываем — черновик/выключенный включает админ после настройки.
+    update_data: dict = {'price': getattr(offer, 'price', None), 'removed': False}
+    if not fp_active and existing.active:
+        free = await account_repo.count_free(existing.id)
+        if free > 0:  # free>0 → продавец выключил; free==0 → наша скрытка, не трогаем
+            update_data['active'] = False
+            result.deactivated += 1
+    await repo.update(update_data, id_=existing.id)
+    result.updated += 1
