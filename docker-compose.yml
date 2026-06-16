@@ -21,15 +21,15 @@ services:
     build: .
     container_name: funpay_bot
     restart: unless-stopped
+    # Сеть хоста: нужна для доступа к Telegram по IPv6 (у хостера IPv4 к
+    # api.telegram.org заблокирован, а IPv6 работает). FunPay/Steam идут по IPv4.
+    # При host-сети БД берётся по db_host/db_port из .env (localhost:5437 —
+    # postgres опубликован на 127.0.0.1:5437), сервисное имя compose недоступно.
+    network_mode: host
     depends_on:
       postgres:
         condition: service_healthy
     env_file: .env
-    environment:
-      # Внутри сети compose БД доступна по имени сервиса, порт 5432.
-      # Переопределяет db_host/db_port из .env (env > .env в pydantic-settings).
-      db_host: postgres
-      db_port: "5432"
     volumes:
       - ./logs:/app/logs   # ротация логов видна на хосте (log_file=logs/bot.log)
 
