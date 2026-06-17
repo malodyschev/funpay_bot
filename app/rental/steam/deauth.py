@@ -4,6 +4,7 @@ import hmac
 from logging import getLogger
 
 from app.rental.common.exceptions import SteamModuleError
+from app.rental.steam.interface import SteamSessionInfo
 from app.rental.steam.login import SteamSession
 
 
@@ -42,6 +43,20 @@ async def enumerate_sessions(session: SteamSession) -> list[dict]:
     if resp.status_code != 200:
         raise SteamModuleError(f'EnumerateTokens вернул {resp.status_code}: {resp.text[:200]}')
     return resp.json().get('response', {}).get('refresh_tokens', [])
+
+
+async def list_account_sessions(session: SteamSession) -> list[SteamSessionInfo]:
+    """Активные сессии аккаунта в удобном виде (для просмотра в админке)."""
+    sessions = []
+    for token in await enumerate_sessions(session):
+        last_seen = token.get('last_seen') or {}
+        sessions.append(SteamSessionInfo(
+            description=token.get('token_description') or '—',
+            last_seen_ts=last_seen.get('time'),
+            country=last_seen.get('country'),
+            city=last_seen.get('city'),
+        ))
+    return sessions
 
 
 async def revoke_session(session: SteamSession, shared_secret: str, token_id: str) -> bool:

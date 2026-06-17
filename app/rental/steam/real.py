@@ -1,7 +1,7 @@
 from logging import getLogger
 
-from app.rental.steam.deauth import deauthorize_all_sessions
-from app.rental.steam.interface import SteamCredentials, SteamModule
+from app.rental.steam.deauth import deauthorize_all_sessions, list_account_sessions
+from app.rental.steam.interface import SteamCredentials, SteamModule, SteamSessionInfo
 from app.rental.steam.login import login_to_steam
 from app.rental.steam.totp import generate_steam_code
 
@@ -36,5 +36,13 @@ class RealSteamModule(SteamModule):
         session = await login_to_steam(credentials, proxy=self._proxy)
         try:
             return await deauthorize_all_sessions(session, credentials.shared_secret)
+        finally:
+            await session.close()
+
+    async def list_sessions(self, credentials: SteamCredentials) -> list[SteamSessionInfo]:
+        """Залогиниться и вернуть список активных сессий (для проверки в админке)."""
+        session = await login_to_steam(credentials, proxy=self._proxy)
+        try:
+            return await list_account_sessions(session)
         finally:
             await session.close()

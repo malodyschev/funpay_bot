@@ -14,6 +14,16 @@ class SteamCredentials:
     device_id: str | None = None
 
 
+@dataclass
+class SteamSessionInfo:
+    """Активная сессия Steam-аккаунта (refresh-токен из EnumerateTokens)."""
+
+    description: str           # token_description — браузер/устройство
+    last_seen_ts: int | None   # last_seen.time (unix), когда сессия была активна
+    country: str | None
+    city: str | None
+
+
 class SteamModule(ABC):
     """Изолированный интерфейс работы со Steam.
 
@@ -38,4 +48,12 @@ class SteamModule(ABC):
 
         Returns:
             Сколько сессий успешно отозвано.
+        """
+
+    @abstractmethod
+    async def list_sessions(self, credentials: SteamCredentials) -> list[SteamSessionInfo]:
+        """Список активных сессий аккаунта (проверить, вышли ли все/никто не сидит).
+
+        Внимание: сам вызов логинится в Steam, поэтому в списке будет и
+        текущая проверочная сессия бота.
         """

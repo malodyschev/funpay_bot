@@ -1,10 +1,28 @@
 import html
 import math
-from datetime import datetime
+from datetime import UTC, datetime
 
 from app.rental.common.enums import AccountStatusEnum
 from app.rental.models.lot import Lot
 from app.rental.services.admin import AccountView, Dashboard, LotStock, RentalView
+from app.rental.steam.interface import SteamSessionInfo
+
+
+def fmt_sessions(sessions: list[SteamSessionInfo]) -> str:
+    """Список активных Steam-сессий для админки."""
+    if not sessions:
+        return '🌐 Активных сессий нет — на аккаунте никто не залогинен.'
+    lines = [f'🌐 <b>Активные сессии ({len(sessions)})</b>']
+    for s in sessions:
+        when = (
+            datetime.fromtimestamp(s.last_seen_ts, tz=UTC).strftime('%d.%m %H:%M UTC')
+            if s.last_seen_ts
+            else '—'
+        )
+        loc = ', '.join(p for p in (s.country, s.city) if p) or '—'
+        lines.append(f'• {html.escape(s.description)} — был(а) {when}, {loc}')
+    lines.append('\nℹ️ Одна из них — текущая проверка ботом (создаётся при запросе).')
+    return '\n'.join(lines)
 
 
 _STATUS_EMOJI = {

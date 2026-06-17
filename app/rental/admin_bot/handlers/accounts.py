@@ -10,6 +10,7 @@ from app.database import get_session
 from app.rental.admin_bot import formatters as fmt, keyboards as kb
 from app.rental.admin_bot.callbacks import Acc, Extend, LotOpen, MoveTo
 from app.rental.common.enums import AccountStatusEnum
+from app.rental.common.exceptions import SteamModuleError
 from app.rental.services.admin import AdminService
 from app.runtime import runtime
 
@@ -77,6 +78,22 @@ async def reveal(cb: CallbackQuery, callback_data: Acc) -> None:
         f'Guard-код: <code>{creds.code}</code>',
     )
     await cb.answer()
+
+
+@router.callback_query(Acc.filter(F.action == 'sessions'))
+async def show_sessions(cb: CallbackQuery, callback_data: Acc) -> None:
+    await cb.answer('Проверяю сессии в Steam…')  # логин в Steam занимает пару секунд
+    try:
+        async with get_session() as session:
+            svc = AdminService(session, runtime.get_deps())
+            sessions = await svc.list_sessions(callback_data.account_id)
+    except SteamModuleError as exc:
+        await cb.message.answer(f'⚠️ Не удалось получить сессии: {html.escape(str(exc))}')
+        return
+    if sessions is None:
+        await cb.message.answer('Аккаунт не найден')
+        return
+    await cb.message.answer(fmt.fmt_sessions(sessions))
 
 
 @router.callback_query(Acc.filter(F.action == 'extend'))

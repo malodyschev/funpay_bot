@@ -20,6 +20,7 @@ from app.rental.services.credentials import build_credentials
 from app.rental.services.expire_rental import ExpireRentalService
 from app.rental.services.extend_rental import ExtendRentalService
 from app.rental.services.lot_visibility import sync_lot_visibility
+from app.rental.steam.interface import SteamSessionInfo
 from app.runtime import RentalDeps
 
 
@@ -144,6 +145,13 @@ class AdminService:
         creds = build_credentials(account)
         code = await self.deps.steam.generate_code(creds)
         return Credentials(login=creds.login, password=creds.password, code=code)
+
+    async def list_sessions(self, account_id: int) -> list[SteamSessionInfo] | None:
+        """Активные сессии Steam-аккаунта (логинится в Steam, может занять пару сек)."""
+        account = await self.account_repo.get_or_none(id_=account_id)
+        if not account:
+            return None
+        return await self.deps.steam.list_sessions(build_credentials(account))
 
     # ---------- действия ----------
 

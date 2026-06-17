@@ -16,7 +16,7 @@ class LotOpen(CallbackData, prefix='lot'):
 class Acc(CallbackData, prefix='a'):
     """Действие над аккаунтом.
 
-    action: open | reveal | notes | extend |
+    action: open | reveal | sessions | notes | extend |
             kick | kick_yes | release | offline | banned | banned_yes | activate
     """
 

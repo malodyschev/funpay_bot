@@ -94,6 +94,7 @@ def account_card(view: AccountView) -> InlineKeyboardMarkup:
     acc = view.account
     kb = InlineKeyboardBuilder()
     kb.button(text='🔐 Показать креды', callback_data=Acc(action='reveal', account_id=acc.id))
+    kb.button(text='🌐 Активные сессии', callback_data=Acc(action='sessions', account_id=acc.id))
 
     if acc.status == AccountStatusEnum.RENTED:
         kb.button(text='⛔ Досрочный кик', callback_data=Acc(action='kick', account_id=acc.id))

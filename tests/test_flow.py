@@ -335,6 +335,31 @@ def test_steam_proxy_resolution():
     assert s(proxy_url='', steam_proxy_url='') is None
 
 
+async def test_list_sessions(session):
+    from app.rental.steam.interface import SteamSessionInfo
+
+    lot = await seed_lot(session)
+    acc = await seed_account(session, lot.id)
+    deps = make_deps()
+    deps.steam.sessions = [
+        SteamSessionInfo(description='Chrome', last_seen_ts=None, country='RU', city='Moscow'),
+    ]
+    svc = AdminService(session, deps)
+
+    sessions = await svc.list_sessions(acc.id)
+    assert len(sessions) == 1 and sessions[0].description == 'Chrome'
+    assert await svc.list_sessions(999999) is None  # нет аккаунта
+
+
+def test_fmt_sessions():
+    from app.rental.admin_bot.formatters import fmt_sessions
+    from app.rental.steam.interface import SteamSessionInfo
+
+    assert 'никто не залогинен' in fmt_sessions([])
+    txt = fmt_sessions([SteamSessionInfo('Chrome', None, 'RU', 'Moscow')])
+    assert 'Chrome' in txt and 'RU' in txt
+
+
 async def test_toggle_lot_extension(session):
     lot = await seed_lot(session)
     svc = AdminService(session, make_deps())
