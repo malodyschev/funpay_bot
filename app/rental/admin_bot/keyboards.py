@@ -12,7 +12,11 @@ from app.rental.admin_bot.callbacks import (
     MoveTo,
     Refund,
 )
-from app.rental.admin_bot.formatters import account_button_label, rental_button_label
+from app.rental.admin_bot.formatters import (
+    account_button_label,
+    lot_mark,
+    rental_button_label,
+)
 from app.rental.common.enums import AccountStatusEnum
 from app.rental.models.lot import Lot
 from app.rental.services.admin import AccountView, LotStock, RentalView
@@ -45,11 +49,11 @@ def lot_kind() -> InlineKeyboardMarkup:
 def lots_menu(lots: list[LotStock]) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     for ls in lots:
-        mark = '' if ls.lot.active else '⚪️ '
+        mark = lot_mark(ls)
         if ls.lot.is_extension:
-            label = f'{mark}⏱ {ls.lot.title} (продление)'
+            label = f'{mark} ⏱ {ls.lot.title} (продление)'
         else:
-            label = f'{mark}{ls.lot.title} ({ls.free}/{ls.total})'
+            label = f'{mark} {ls.lot.title} ({ls.free}/{ls.total})'
         kb.button(text=label, callback_data=LotOpen(lot_id=ls.lot.id))
     kb.button(text='🔄 Синхр. с FunPay', callback_data=Menu(action='sync'))
     kb.button(text='➕ Добавить лот', callback_data=Menu(action='add_lot'))

@@ -335,6 +335,24 @@ def test_steam_proxy_resolution():
     assert s(proxy_url='', steam_proxy_url='') is None
 
 
+async def test_raiser_collects_categories(session):
+    from types import SimpleNamespace
+
+    from app.rental import raiser
+
+    lot = await seed_lot(session)
+    lot.funpay_node_id = 81
+    lot.funpay_lot_id = 555
+    lot.active = True
+    await session.commit()
+
+    class StubAccount:
+        def get_subcategory(self, type_, node_id):
+            return SimpleNamespace(category=SimpleNamespace(id=999)) if node_id == 81 else None
+
+    assert await raiser._our_category_ids(StubAccount()) == {999}
+
+
 async def test_list_sessions(session):
     from app.rental.steam.interface import SteamSessionInfo
 
@@ -349,6 +367,23 @@ async def test_list_sessions(session):
     sessions = await svc.list_sessions(acc.id)
     assert len(sessions) == 1 and sessions[0].description == 'Chrome'
     assert await svc.list_sessions(999999) is None  # нет аккаунта
+
+
+def test_lot_mark():
+    from types import SimpleNamespace
+
+    from app.rental.admin_bot.formatters import lot_mark
+    from app.rental.services.admin import LotStock
+
+    def ls(*, active=True, ext=False, free=0, rented=0):
+        lot = SimpleNamespace(active=active, is_extension=ext)
+        return LotStock(lot=lot, free=free, total=1, rented=rented)
+
+    assert lot_mark(ls(active=False)) == '⚪️'           # выключен
+    assert lot_mark(ls(free=2)) == '🟢'                  # есть свободные
+    assert lot_mark(ls(free=0, rented=1)) == '🔵'        # скрыт — все в аренде
+    assert lot_mark(ls(free=0, rented=0)) == '🔴'        # скрыт — нет свободных
+    assert lot_mark(ls(ext=True, free=0)) == '🟢'        # продление всегда видно
 
 
 def test_fmt_sessions():

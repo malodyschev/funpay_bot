@@ -182,6 +182,7 @@ async def _run() -> None:
     from app.rental.funpay.lot_sync import sync_lots
     from app.rental.funpay.real import RealFunPayConnector, build_account
     from app.rental.poller import run_poller
+    from app.rental.raiser import run_raiser
     from app.rental.steam.real import RealSteamModule
     from app.runtime import RentalDeps, runtime
 
@@ -227,6 +228,7 @@ async def _run() -> None:
     tasks = [
         asyncio.create_task(run_poller()),
         asyncio.create_task(run_funpay_listener(account)),
+        asyncio.create_task(run_raiser()),
     ]
     logger.info('admin bot started (funpay=real)')
     try:

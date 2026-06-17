@@ -37,11 +37,12 @@ class Dashboard:
 
 @dataclass
 class LotStock:
-    """Лот + сколько свободных аккаунтов."""
+    """Лот + остаток аккаунтов (свободные / в аренде / всего)."""
 
     lot: Lot
     free: int
     total: int
+    rented: int = 0
 
 
 @dataclass
@@ -99,7 +100,8 @@ class AdminService:
                 continue  # удалён на FunPay — в админке не показываем
             accounts = await self.account_repo.list_by_lot(lot.id)
             free = sum(1 for a in accounts if a.status == AccountStatusEnum.FREE)
-            out.append(LotStock(lot=lot, free=free, total=len(accounts)))
+            rented = sum(1 for a in accounts if a.status == AccountStatusEnum.RENTED)
+            out.append(LotStock(lot=lot, free=free, total=len(accounts), rented=rented))
         return out
 
     async def get_lot(self, lot_id: int) -> Lot | None:

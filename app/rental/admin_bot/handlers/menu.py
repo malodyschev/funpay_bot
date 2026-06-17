@@ -40,7 +40,14 @@ async def lots(cb: CallbackQuery) -> None:
     async with get_session() as session:
         svc = AdminService(session, runtime.get_deps())
         lots = await svc.lots_with_stock()
-    text = 'Нет лотов. Создай лот через CLI.' if not lots else '🗂 <b>Лоты</b> — выбери лот:'
+    text = (
+        'Нет лотов. Создай лот через CLI.'
+        if not lots
+        else (
+            '🗂 <b>Лоты</b> — выбери лот:\n'
+            '🟢 виден · 🔵 скрыт (все в аренде) · 🔴 скрыт (нет свободных) · ⚪️ выключен'
+        )
+    )
     await cb.message.edit_text(text, reply_markup=kb.lots_menu(lots))
     await cb.answer()
 

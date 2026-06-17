@@ -8,6 +8,21 @@ from app.rental.services.admin import AccountView, Dashboard, LotStock, RentalVi
 from app.rental.steam.interface import SteamSessionInfo
 
 
+def lot_mark(ls: LotStock) -> str:
+    """Индикатор состояния лота (его видимость на FunPay).
+
+    ⚪️ выключен вручную · 🟢 виден (есть свободные) ·
+    🔵 скрыт — все аккаунты в аренде · 🔴 скрыт — нет свободных аккаунтов.
+    """
+    if not ls.lot.active:
+        return '⚪️'
+    if ls.lot.is_extension or ls.free > 0:
+        return '🟢'
+    if ls.rented > 0:
+        return '🔵'
+    return '🔴'
+
+
 def fmt_sessions(sessions: list[SteamSessionInfo]) -> str:
     """Список активных Steam-сессий для админки."""
     if not sessions:
@@ -103,10 +118,16 @@ def fmt_dashboard(dash: Dashboard, lots: list[LotStock]) -> str:
             if ls.lot.is_extension:
                 lines.append(f'⏱ {html.escape(ls.lot.title)} — продление')
                 continue
-            light = '🟢' if ls.free else '🔴'
-            tail = ' — нет в наличии ⚠️' if not ls.free else ''
+            if not ls.lot.active:
+                tail = ' — выключен'
+            elif ls.free:
+                tail = ''
+            elif ls.rented:
+                tail = ' — всё в аренде (скрыт)'
+            else:
+                tail = ' — нет в наличии ⚠️'
             lines.append(
-                f'{light} {html.escape(ls.lot.title)} · <b>{ls.free}</b>/{ls.total}{tail}',
+                f'{lot_mark(ls)} {html.escape(ls.lot.title)} · <b>{ls.free}</b>/{ls.total}{tail}',
             )
     return '\n'.join(lines)
 
