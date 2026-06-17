@@ -42,6 +42,12 @@ async def raise_once() -> None:
         try:
             wait = await asyncio.to_thread(account.raise_lots, cat_id)
             logger.info('raised lots in category %s (FunPay: next in ~%ss)', cat_id, wait)
+        except FunPayAPI.exceptions.RaiseError as exc:
+            # «ещё рано» — штатный кулдаун FunPay, логируем коротко (без HTTP-дампа)
+            logger.info(
+                'category %s: ещё рано (%s), повтор через ~%sс',
+                cat_id, exc.error_message, exc.wait_time,
+            )
         except Exception as exc:
             logger.info('raise category %s skipped (не критично): %s', cat_id, exc)
 
