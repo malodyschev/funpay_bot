@@ -323,6 +323,20 @@ async def test_refund_decline_notifies_buyer(session):
     assert 'отклонил' in deps.funpay.sent[-1][1].lower()
 
 
+async def test_toggle_lot_extension(session):
+    lot = await seed_lot(session)
+    svc = AdminService(session, make_deps())
+    assert lot.is_extension is False
+
+    assert await svc.toggle_lot_extension(lot.id) is True
+    refreshed = await svc.get_lot(lot.id)
+    assert refreshed.is_extension is True
+
+    assert await svc.toggle_lot_extension(lot.id) is False
+    refreshed = await svc.get_lot(lot.id)
+    assert refreshed.is_extension is False
+
+
 async def test_w6_info_commands(session):
     lot = await seed_lot(session)
     await seed_account(session, lot.id)

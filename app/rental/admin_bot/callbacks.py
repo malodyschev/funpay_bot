@@ -58,7 +58,7 @@ class BindAccount(CallbackData, prefix='bindacc'):
 
 
 class LotAct(CallbackData, prefix='la'):
-    """Действие над лотом: action=duration|toggle_active, lot_id."""
+    """Действие над лотом: action=duration|toggle_active|toggle_ext, lot_id."""
 
     action: str
     lot_id: int

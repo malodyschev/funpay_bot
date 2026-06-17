@@ -229,6 +229,16 @@ class AdminService:
         await sync_lot_visibility(self.session, self.deps, lot_id)
         return new_active
 
+    async def toggle_lot_extension(self, lot_id: int) -> bool | None:
+        """Переключить тип лота: аренда ↔ продление (is_extension)."""
+        lot = await self.lot_repo.get_or_none(id_=lot_id)
+        if not lot:
+            return None
+        new_ext = not lot.is_extension
+        await self.lot_repo.update({'is_extension': new_ext}, id_=lot_id)
+        await sync_lot_visibility(self.session, self.deps, lot_id)
+        return new_ext
+
     async def create_lot(
         self,
         *,

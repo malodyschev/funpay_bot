@@ -70,8 +70,8 @@ async def lot_toggle_active(cb: CallbackQuery, callback_data: LotAct) -> None:
         if not lot:
             await cb.answer('Лот не найден', show_alert=True)
             return
-        if not lot.active and not lot.is_extension and lot.duration_minutes <= 0:
-            await cb.answer('Сначала задай длительность лота.', show_alert=True)
+        if not lot.active and lot.duration_minutes <= 0:
+            await cb.answer('Сначала задай длительность (минуты).', show_alert=True)
             return
         await svc.toggle_lot_active(callback_data.lot_id)
         lot = await svc.get_lot(callback_data.lot_id)
@@ -81,6 +81,33 @@ async def lot_toggle_active(cb: CallbackQuery, callback_data: LotAct) -> None:
         reply_markup=kb.lot_accounts(views, lot),
     )
     await cb.answer('Лот включён' if lot.active else 'Лот выключен')
+
+
+@router.callback_query(LotAct.filter(F.action == 'toggle_ext'))
+async def lot_toggle_ext(cb: CallbackQuery, callback_data: LotAct) -> None:
+    async with get_session() as session:
+        svc = AdminService(session, runtime.get_deps())
+        lot = await svc.get_lot(callback_data.lot_id)
+        if not lot:
+            await cb.answer('Лот не найден', show_alert=True)
+            return
+        views = await svc.accounts_of_lot(callback_data.lot_id)
+        if not lot.is_extension and views:
+            # становится продлением, но к лоту привязаны аккаунты — продление их не использует
+            await cb.answer(
+                'У лота есть аккаунты — продление их не использует. '
+                'Сначала перенеси/освободи аккаунты.',
+                show_alert=True,
+            )
+            return
+        new_ext = await svc.toggle_lot_extension(callback_data.lot_id)
+        lot = await svc.get_lot(callback_data.lot_id)
+        views = await svc.accounts_of_lot(callback_data.lot_id)
+    await cb.message.edit_text(
+        fmt.fmt_lot(lot, len(views)),
+        reply_markup=kb.lot_accounts(views, lot),
+    )
+    await cb.answer('Теперь это продление' if new_ext else 'Теперь это аренда')
 
 
 @router.callback_query(LotAct.filter(F.action == 'duration'))

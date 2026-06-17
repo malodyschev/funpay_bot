@@ -68,12 +68,20 @@ def lot_accounts(views: list[AccountView], lot: Lot) -> InlineKeyboardMarkup:
             callback_data=Acc(action='open', account_id=v.account.id),
         )
     kb.button(
-        text=f'⏱ Длительность ({lot.duration_minutes} мин)',
+        text=(
+            f'⏱ Добавляет ({lot.duration_minutes} мин)'
+            if lot.is_extension
+            else f'⏱ Длительность ({lot.duration_minutes} мин)'
+        ),
         callback_data=LotAct(action='duration', lot_id=lot.id),
     )
     kb.button(
         text='⚪️ Выключить лот' if lot.active else '🟢 Включить лот',
         callback_data=LotAct(action='toggle_active', lot_id=lot.id),
+    )
+    kb.button(
+        text='🎮 Сделать арендой' if lot.is_extension else '⏱ Сделать продлением',
+        callback_data=LotAct(action='toggle_ext', lot_id=lot.id),
     )
     if not lot.is_extension:
         kb.button(text='🔑 Привязать (логин+пароль)', callback_data=BindAccount(lot_id=lot.id))

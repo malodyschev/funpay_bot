@@ -654,8 +654,8 @@ class Runner:
                     raise e
                 else:
                     logger.error("Произошла ошибка при получении событий. "
-                                 "(ничего страшного, если это сообщение появляется нечасто).")
-                    logger.debug("TRACEBACK", exc_info=True)
+                                 "(ничего страшного, если это сообщение появляется нечасто).",
+                                 exc_info=True)
             iteration_time = time.time() - start_time
             if time.time() - self.account.last_429_err_time > 60:
                 rt = requests_delay - iteration_time
