@@ -213,7 +213,7 @@ async def _run() -> None:
 
     runtime.deps = RentalDeps(
         funpay=RealFunPayConnector(account),
-        steam=RealSteamModule(proxy=settings.proxy_url or None),
+        steam=RealSteamModule(proxy=settings.steam_proxy),
         notifier=TelegramNotifier(bot, admin_ids),
     )
 

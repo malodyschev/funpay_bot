@@ -323,6 +323,18 @@ async def test_refund_decline_notifies_buyer(session):
     assert 'отклонил' in deps.funpay.sent[-1][1].lower()
 
 
+def test_steam_proxy_resolution():
+    from app.config import Settings
+
+    def s(**kw):
+        return Settings(_env_file=None, **kw).steam_proxy
+
+    assert s(proxy_url='http://p', steam_proxy_url='') == 'http://p'   # fallback на proxy_url
+    assert s(proxy_url='http://p', steam_proxy_url='direct') is None    # Steam напрямую
+    assert s(proxy_url='http://p', steam_proxy_url='http://s') == 'http://s'  # свой прокси
+    assert s(proxy_url='', steam_proxy_url='') is None
+
+
 async def test_toggle_lot_extension(session):
     lot = await seed_lot(session)
     svc = AdminService(session, make_deps())

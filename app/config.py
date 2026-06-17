@@ -26,7 +26,10 @@ class Settings(BaseSettings):
     funpay_golden_key: str = ''
     funpay_user_agent: str = ''
     funpay_requests_delay: int = 4
-    proxy_url: str = ''
+    proxy_url: str = ''  # прокси для FunPay (и Steam, если steam_proxy_url пуст)
+    # Прокси отдельно для Steam: пусто = брать proxy_url; 'direct'/'none' = без прокси
+    # (нужно, когда FunPay-прокси не маршрутизирует Steam — отдаёт 502).
+    steam_proxy_url: str = ''
 
     bot_token: str = ''
     admin_id: str = ''  # один или несколько TG id через запятую: "123" или "123,456"
@@ -43,6 +46,14 @@ class Settings(BaseSettings):
         env_file=os.getenv('ENV_FILE', '.env'),
         extra='ignore',
     )
+
+    @property
+    def steam_proxy(self) -> str | None:
+        """Прокси для Steam: steam_proxy_url, иначе proxy_url; 'direct'/'none' = без прокси."""
+        raw = self.steam_proxy_url.strip()
+        if raw.lower() in ('direct', 'none', '-'):
+            return None
+        return raw or (self.proxy_url or None)
 
     @property
     def admin_id_list(self) -> list[int]:

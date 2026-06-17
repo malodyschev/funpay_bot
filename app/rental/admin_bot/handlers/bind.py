@@ -41,7 +41,7 @@ class BindForm(StatesGroup):
 
 
 def _proxy() -> str | None:
-    return settings.proxy_url or None
+    return settings.steam_proxy  # привязка/логин в Steam — через steam-прокси (или напрямую)
 
 
 @router.callback_query(BindAccount.filter())
