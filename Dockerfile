@@ -3,7 +3,10 @@ FROM python:3.12-slim
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    TZ=Europe/Moscow
+    TZ=Europe/Moscow \
+    PYTHONPATH=/app/vendor
+
+# FunPayAPI берём из ./vendor (кастомная сборка), а не с PyPI — см. requirements.txt.
 
 WORKDIR /app
 

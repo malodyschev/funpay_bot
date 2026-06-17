@@ -1,6 +1,10 @@
 # Прод-зависимости, зафиксированы из рабочего venv (полный транзитивный замок).
 # Пинним всё намеренно: обновление FunPayAPI уже ломало события — на сервере
 # хотим воспроизводимую среду. Обновлять — осознанно и с проверкой.
+#
+# FunPayAPI НЕ ставим с PyPI: у нас кастомная (доработанная) сборка, она
+# завендорена в ./vendor/FunPayAPI и подключается через PYTHONPATH (см. Dockerfile).
+# Здесь оставлены только её зависимости (requests/beautifulsoup4/lxml/requests-toolbelt).
 aiofiles==25.1.0
 aiogram==3.29.0
 aiohappyeyeballs==2.6.2
@@ -20,7 +24,6 @@ charset-normalizer==2.1.1
 click==8.4.1
 cryptography==49.0.0
 frozenlist==1.8.0
-FunPayAPI==1.1.0
 greenlet==3.5.1
 h11==0.16.0
 httpcore==1.0.9

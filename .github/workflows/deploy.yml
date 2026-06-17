@@ -1,0 +1,30 @@
+name: deploy
+
+# Любой пуш в main → заходим на сервер по SSH, подтягиваем код и пересобираем бота.
+on:
+  push:
+    branches: [main]
+
+# Не запускать два деплоя параллельно; новый пуш отменяет предыдущий.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            set -e
+            cd ~/funpay_bot
+            git fetch origin main
+            git reset --hard origin/main      # .env и logs/ в .gitignore — не затираются
+            docker compose up -d --build
+            docker image prune -f             # чистим старые образы, чтобы не забить диск
