@@ -1,5 +1,4 @@
 import asyncio
-import contextlib
 import getpass
 import os
 from logging import getLogger
@@ -171,14 +170,13 @@ def set_password(account_id):
 
 @cli.command()
 def run():
-    """Run the bot (admin panel + scheduler; FunPay эмулируется в Telegram)."""
+    """Run the bot (Telegram-админка + поллер + боевой FunPay-листенер)."""
     setup_logging()
     asyncio.run(_run())
 
 
 async def _run() -> None:
     from app.rental.admin_bot.bot import build_admin_bot
-    from app.rental.admin_bot.sim_connector import TelegramSimFunPayConnector
     from app.rental.admin_bot.telegram_notifier import TelegramNotifier
     from app.rental.funpay.listener import run_funpay_listener
     from app.rental.funpay.lot_sync import sync_lots
@@ -194,58 +192,43 @@ async def _run() -> None:
 
     bot, dp = build_admin_bot(settings.bot_token, admin_ids)
 
-    # Есть golden_key → боевой FunPay; иначе — режим симуляции в Telegram.
-    # Сбой авторизации FunPay (таймаут/блокировка) НЕ должен ронять весь бот:
-    # стартуем в деградированном режиме (админка+поллер), листенер выключен.
-    account = None
-    funpay_error: str | None = None
-    if settings.funpay_golden_key:
-        try:
-            account = await asyncio.to_thread(
-                build_account,
-                settings.funpay_golden_key,
-                settings.funpay_user_agent,
-                settings.proxy_url or None,
-            )
-            funpay = RealFunPayConnector(account)
-            runtime.funpay_account = account
-        except Exception as exc:
-            funpay_error = str(exc) or exc.__class__.__name__
-            logger.exception('FunPay недоступен — запуск без FunPay (только админка+поллер)')
-            funpay = TelegramSimFunPayConnector(bot, admin_ids)
-    else:
-        funpay = TelegramSimFunPayConnector(bot, admin_ids)
-        logger.info('funpay golden_key не задан — режим симуляции')
+    # Боевой FunPay обязателен (режим симуляции удалён). Нет golden_key или
+    # авторизация не прошла → не стартуем с понятной ошибкой, чтобы не было
+    # «тихого» нерабочего режима. Контейнер с restart-policy перезапустит.
+    if not settings.funpay_golden_key:
+        raise click.ClickException('нужен FUNPAY_GOLDEN_KEY в .env')
+    try:
+        account = await asyncio.to_thread(
+            build_account,
+            settings.funpay_golden_key,
+            settings.funpay_user_agent,
+            settings.proxy_url or None,
+        )
+    except Exception as exc:
+        reason = str(exc) or exc.__class__.__name__
+        raise click.ClickException(
+            f'Авторизация FunPay не удалась (golden_key протух/заблокирован IP?): {reason}',
+        ) from exc
+    runtime.funpay_account = account
 
     runtime.deps = RentalDeps(
-        funpay=funpay,
+        funpay=RealFunPayConnector(account),
         steam=RealSteamModule(proxy=settings.proxy_url or None),
         notifier=TelegramNotifier(bot, admin_ids),
     )
 
-    if account is not None:
-        try:
-            async with get_session() as session:
-                sync_result = await sync_lots(session, account)
-            logger.info('startup funpay lot sync: %s', sync_result.summary())
-        except Exception:
-            logger.exception('startup funpay lot sync failed')
+    try:
+        async with get_session() as session:
+            sync_result = await sync_lots(session, account)
+        logger.info('startup funpay lot sync: %s', sync_result.summary())
+    except Exception:
+        logger.exception('startup funpay lot sync failed')
 
-    if funpay_error:
-        for admin_id in admin_ids:
-            with contextlib.suppress(Exception):
-                await bot.send_message(
-                    admin_id,
-                    '⚠️ FunPay недоступен при старте (таймаут/блокировка). '
-                    'Бот работает без FunPay: админка и таймеры активны, '
-                    'приём заказов выключен. Проверь сеть/proxy_url и перезапусти.\n'
-                    f'Причина: {funpay_error}',
-                )
-
-    tasks = [asyncio.create_task(run_poller())]
-    if account is not None:
-        tasks.append(asyncio.create_task(run_funpay_listener(account)))
-    logger.info('admin bot started (funpay=%s)', 'real' if account else 'simulation')
+    tasks = [
+        asyncio.create_task(run_poller()),
+        asyncio.create_task(run_funpay_listener(account)),
+    ]
+    logger.info('admin bot started (funpay=real)')
     try:
         await dp.start_polling(bot)
     finally:

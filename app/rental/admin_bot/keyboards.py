@@ -11,7 +11,6 @@ from app.rental.admin_bot.callbacks import (
     Menu,
     MoveTo,
     Refund,
-    Sim,
 )
 from app.rental.admin_bot.formatters import account_button_label, rental_button_label
 from app.rental.common.enums import AccountStatusEnum
@@ -24,7 +23,6 @@ def main_menu() -> InlineKeyboardMarkup:
     kb.button(text='📊 Дашборд', callback_data=Menu(action='dashboard'))
     kb.button(text='🗂 Лоты и аккаунты', callback_data=Menu(action='lots'))
     kb.button(text='📋 Активные аренды', callback_data=Menu(action='rentals'))
-    kb.button(text='🧪 Симуляция', callback_data=Menu(action='sim'))
     kb.adjust(1)
     return kb.as_markup()
 
@@ -173,54 +171,5 @@ def refund_request(order_id: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text='✅ Вернуть', callback_data=Refund(yes=1, order_id=order_id))
     kb.button(text='❌ Отклонить', callback_data=Refund(yes=0, order_id=order_id))
-    kb.adjust(2)
-    return kb.as_markup()
-
-
-# ---------- симуляция ----------
-
-def sim_menu() -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    kb.button(text='🛒 Новый заказ', callback_data=Sim(action='order_menu'))
-    kb.button(text='💬 Команда в чат', callback_data=Sim(action='cmd_menu'))
-    kb.button(text='⭐ Отзыв (продление)', callback_data=Sim(action='review_menu'))
-    kb.button(text='⏰ Истечь сейчас', callback_data=Sim(action='expire_menu'))
-    kb.button(text='⬅️ В меню', callback_data=Menu(action='menu'))
-    kb.adjust(1)
-    return kb.as_markup()
-
-
-def sim_pick_lot(lots: list[LotStock]) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    for ls in lots:
-        kb.button(
-            text=f'{ls.lot.title} ({ls.free} своб.)',
-            callback_data=Sim(action='order', arg=str(ls.lot.id)),
-        )
-    kb.button(text='⬅️ Назад', callback_data=Menu(action='sim'))
-    kb.adjust(1)
-    return kb.as_markup()
-
-
-def sim_pick_rental(views: list[RentalView], action: str) -> InlineKeyboardMarkup:
-    """Выбрать активную аренду для cmd/review/expire (arg — order_id или chat_id)."""
-    kb = InlineKeyboardBuilder()
-    for v in views:
-        login = v.account.login if v.account else f'acc#{v.rental.account_id}'
-        if action == 'cmd':
-            arg = str(v.rental.chat_id)
-        else:
-            arg = v.rental.funpay_order_id
-        kb.button(text=f'🔵 {login}', callback_data=Sim(action=action, arg=arg))
-    kb.button(text='⬅️ Назад', callback_data=Menu(action='sim'))
-    kb.adjust(1)
-    return kb.as_markup()
-
-
-def sim_commands(chat_id: int) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    for cmd in ('!free', '!free-all', '!acc', '!code', '!time', '!extend', '!refund', '!admin'):
-        kb.button(text=cmd, callback_data=Sim(action='cmd_send', arg=f'{chat_id}|{cmd}'))
-    kb.button(text='⬅️ Назад', callback_data=Sim(action='cmd_menu'))
     kb.adjust(2)
     return kb.as_markup()

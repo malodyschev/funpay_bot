@@ -9,7 +9,7 @@ from aiogram.filters import BaseFilter
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import ErrorEvent, TelegramObject
 
-from app.rental.admin_bot.handlers import accounts, bind, manage, menu, refund, simulation
+from app.rental.admin_bot.handlers import accounts, bind, manage, menu, refund
 
 
 logger = getLogger(__name__)
@@ -40,7 +40,6 @@ def build_admin_bot(token: str, admin_ids: list[int]) -> tuple[Bot, Dispatcher]:
         accounts.router,
         manage.router,
         bind.router,
-        simulation.router,
         refund.router,
     )
     for router in routers:

@@ -2,7 +2,7 @@ from aiogram.filters.callback_data import CallbackData
 
 
 class Menu(CallbackData, prefix='m'):
-    """Верхнее меню: dashboard / lots / rentals / sim."""
+    """Верхнее меню: dashboard / lots / rentals."""
 
     action: str
 
@@ -36,13 +36,6 @@ class Refund(CallbackData, prefix='rf'):
 
     yes: int
     order_id: str
-
-
-class Sim(CallbackData, prefix='s'):
-    """Симуляция FunPay: action=order|cmd|review|expire|menu, arg — id/команда."""
-
-    action: str
-    arg: str = ''
 
 
 class AddAccount(CallbackData, prefix='addacc'):
