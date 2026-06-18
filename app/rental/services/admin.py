@@ -201,8 +201,13 @@ class AdminService:
         """Освободить аккаунт без деавторизации (вернуть в пул как есть)."""
         rental = await self.rental_repo.get_active_by_account(account_id)
         if rental:
-            await self.rental_repo.update({'status': RentalStatusEnum.EXPIRED}, id_=rental.id)
-        await self.account_repo.update({'status': AccountStatusEnum.FREE}, id_=account_id)
+            await self.rental_repo.update(
+                {'status': RentalStatusEnum.EXPIRED}, id_=rental.id, commit=False,
+            )
+        await self.account_repo.update(
+            {'status': AccountStatusEnum.FREE}, id_=account_id, commit=False,
+        )
+        await self.session.commit()
         await self._sync_visibility(account_id)
         return 'Аккаунт освобождён (без деавторизации).'
 
@@ -210,8 +215,11 @@ class AdminService:
         """Сменить статус аккаунта (OFFLINE/BANNED/FREE). Активную аренду закрываем."""
         rental = await self.rental_repo.get_active_by_account(account_id)
         if rental and status != AccountStatusEnum.RENTED:
-            await self.rental_repo.update({'status': RentalStatusEnum.EXPIRED}, id_=rental.id)
-        await self.account_repo.update({'status': status}, id_=account_id)
+            await self.rental_repo.update(
+                {'status': RentalStatusEnum.EXPIRED}, id_=rental.id, commit=False,
+            )
+        await self.account_repo.update({'status': status}, id_=account_id, commit=False)
+        await self.session.commit()
         await self._sync_visibility(account_id)
         return f'Статус аккаунта изменён на {status.name}.'
 

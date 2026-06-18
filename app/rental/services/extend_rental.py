@@ -3,6 +3,7 @@ from datetime import timedelta
 from logging import getLogger
 from typing import ClassVar
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.rental.common.enums import ExtensionReasonEnum, RentalStatusEnum
@@ -60,24 +61,35 @@ class ExtendRentalService:
             return
 
         new_expires_at = rental.expires_at + timedelta(minutes=minutes)
-        await self.rental_repo.update(
-            {
-                'expires_at': new_expires_at,
-                'extended_minutes': rental.extended_minutes + minutes,
-                'warned': False,  # перед новым сроком предупредим заново
-            },
-            id_=rental.id,
-        )
-        await self.extension_repo.create({
-            'rental_id': rental.id,
-            'minutes_added': minutes,
-            'reason': reason,
-            'funpay_order_id': order_id,
-        })
+        # АТОМАРНО: +время к аренде и запись extension в одной транзакции.
+        # UNIQUE(extensions.funpay_order_id) ловит дубль заказа продления — при
+        # гонке проигравший откатывается, время НЕ добавляется дважды.
+        try:
+            await self.rental_repo.update(
+                {
+                    'expires_at': new_expires_at,
+                    'extended_minutes': rental.extended_minutes + minutes,
+                    'warned': False,  # перед новым сроком предупредим заново
+                },
+                id_=rental.id,
+                commit=False,
+            )
+            await self.extension_repo.create({
+                'rental_id': rental.id,
+                'minutes_added': minutes,
+                'reason': reason,
+                'funpay_order_id': order_id,
+            }, commit=False)
+            await self.session.commit()
+        except IntegrityError:
+            await self.session.rollback()
+            logger.info('extension order %s дубль — время не добавляю повторно', order_id)
+            return
 
         if rental.chat_id is not None:
             await self.deps.funpay.send_message(
                 rental.chat_id,
-                f'Аренда продлена на {minutes} мин.',
+                f'🎉✨ Аренда продлена на +{minutes} мин! ✨🎉\n'
+                '⏳ Время уже добавлено к вашей сессии. Приятной игры! 🎮🔥',
             )
         logger.info('rental %s extended by %s min (%s)', rental.id, minutes, reason.name)

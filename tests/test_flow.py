@@ -194,6 +194,24 @@ async def test_w4_extend_on_review(session):
     assert len(extensions) == 1
 
 
+async def test_extension_dedup_atomic(session):
+    lot = await seed_lot(session)
+    await seed_account(session, lot.id)
+    deps = make_deps()
+    await NewOrderService(session, deps).handle(order_event())
+    rental = await RentalRepository(session).get_by_order_id('ORDER-1')
+    base_exp = rental.expires_at
+
+    svc = ExtendRentalService(session, deps)
+    await svc.extend_by_id(rental.id, 60, ExtensionReasonEnum.PURCHASE, order_id='EXT-1')
+    # повтор того же заказа продления — время НЕ должно добавиться второй раз
+    await svc.extend_by_id(rental.id, 60, ExtensionReasonEnum.PURCHASE, order_id='EXT-1')
+
+    refreshed = await RentalRepository(session).get_by_order_id('ORDER-1')
+    assert refreshed.expires_at == base_exp + timedelta(minutes=60)  # +60 ровно один раз
+    assert refreshed.extended_minutes == 60
+
+
 async def test_w3_expire_deauthorizes_and_frees(session):
     lot = await seed_lot(session)
     account = await seed_account(session, lot.id)
@@ -455,6 +473,37 @@ async def test_kick_reports_deauth_failure(session, monkeypatch):
     deps.steam.deauthorize = _fail
     msg = await AdminService(session, deps).kick(acc.id)
     assert 'ERROR' in msg
+
+
+def test_backup_next_run_within_24h():
+    from app.rental.backup import _seconds_until_hour
+
+    s = _seconds_until_hour(4)
+    assert 0 < s <= 24 * 3600
+
+
+def test_fetch_unconfirmed_orders():
+    from types import SimpleNamespace
+
+    from app.rental.funpay.orders import fetch_unconfirmed
+
+    pages = {
+        None: ('cur1', [
+            SimpleNamespace(id='A1', buyer_username='b1', description='Dota'),
+            SimpleNamespace(id='A2', buyer_username='b2', description='CS'),
+        ]),
+        'cur1': (None, []),
+    }
+
+    class StubAcc:
+        def get_sales(self, start_from=None, state=None):
+            assert state == 'paid'  # тянем только оплаченные-неподтверждённые
+            next_id, batch = pages[start_from]
+            return next_id, batch, 'ru', {}
+
+    orders = fetch_unconfirmed(StubAcc())
+    assert [o.id for o in orders] == ['A1', 'A2']
+    assert orders[0].buyer == 'b1'
 
 
 async def test_autodelivery_order_ignored(session):

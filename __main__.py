@@ -181,6 +181,7 @@ async def _run() -> None:
     from app.rental.account_check import run_account_check
     from app.rental.admin_bot.bot import build_admin_bot
     from app.rental.admin_bot.telegram_notifier import TelegramNotifier
+    from app.rental.backup import run_backup_scheduler
     from app.rental.funpay.listener import run_funpay_listener
     from app.rental.funpay.lot_sync import sync_lots
     from app.rental.funpay.real import RealFunPayConnector, build_account
@@ -196,9 +197,13 @@ async def _run() -> None:
         raise click.ClickException('нужны BOT_TOKEN и ADMIN_ID/ADMIN_IDS в .env')
 
     bot, dp = build_admin_bot(settings.bot_token, admin_ids)
-    # Кнопка «Меню» слева внизу в Telegram → команда /start (открыть меню).
+    # Кнопка «Меню» слева внизу в Telegram → однозначные команды.
     from aiogram.types import BotCommand
-    await bot.set_my_commands([BotCommand(command='start', description='Открыть меню')])
+    await bot.set_my_commands([
+        BotCommand(command='start', description='Открыть меню'),
+        BotCommand(command='orders', description='Неподтверждённые заказы'),
+        BotCommand(command='backup', description='Бэкап БД сейчас'),
+    ])
 
     # Боевой FunPay обязателен (режим симуляции удалён). Нет golden_key или
     # авторизация не прошла → не стартуем с понятной ошибкой, чтобы не было
@@ -238,6 +243,7 @@ async def _run() -> None:
         asyncio.create_task(run_raiser()),
         asyncio.create_task(run_funpay_health()),
         asyncio.create_task(run_account_check()),
+        asyncio.create_task(run_backup_scheduler(bot, admin_ids)),
     ]
     logger.info('admin bot started (funpay=real)')
     try:

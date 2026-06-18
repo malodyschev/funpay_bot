@@ -38,17 +38,19 @@ class Repository(Generic[TypeModel]):  # noqa: UP046
         result = await self.execute(query)
         return result.scalar_one_or_none()
 
-    async def create(self, item: dict[str, Any]) -> TypeModel:
-        """Create object."""
+    async def create(self, item: dict[str, Any], commit: bool = True) -> TypeModel:
+        """Create object. commit=False — оставить в текущей транзакции (для атомарных операций)."""
         query = sa.insert(self.model).returning(self.model).values(**item)
-        cursor = await self.execute(query, commit=True)
+        cursor = await self.execute(query, commit=commit)
         return cursor.scalar_one()
 
-    async def update(self, item: dict[str, Any], id_: int | None = None, **filters) -> TypeModel:
-        """Update object by id or filters."""
+    async def update(
+        self, item: dict[str, Any], id_: int | None = None, commit: bool = True, **filters,
+    ) -> TypeModel:
+        """Update object by id or filters. commit=False — не коммитить (атомарные операции)."""
         filters = self._get_filters(id_, **filters)
         query = sa.update(self.model).values(**item).returning(self.model).filter_by(**filters)
-        cursor = await self.execute(query, commit=True)
+        cursor = await self.execute(query, commit=commit)
         return cursor.scalar_one()
 
     async def get(self, id_: int | None = None, **filters) -> TypeModel:

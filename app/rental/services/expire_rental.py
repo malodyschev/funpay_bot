@@ -50,8 +50,7 @@ class ExpireRentalService:
         account = await self.account_repo.get(rental.account_id)
 
         if account.type == AccountTypeEnum.OFFLINE:
-            await self.account_repo.update({'status': AccountStatusEnum.FREE}, id_=account.id)
-            await self.rental_repo.update({'status': RentalStatusEnum.EXPIRED}, id_=rental.id)
+            await self._finish(account.id, rental.id, AccountStatusEnum.FREE)
             await sync_lot_visibility(self.session, self.deps, account.lot_id)
             await self._notify_buyer(rental.chat_id)
             logger.info('offline rental %s expired, account %s freed', rental.id, account.id)
@@ -63,16 +62,16 @@ class ExpireRentalService:
         )
 
         if not await self._deauthorize_with_retries(account):
-            await self.account_repo.update({'status': AccountStatusEnum.ERROR}, id_=account.id)
-            await self.rental_repo.update({'status': RentalStatusEnum.ERROR}, id_=rental.id)
+            # деавторизация не удалась → аккаунт ERROR + аренда ERROR (атомарно)
+            await self._finish(account.id, rental.id, AccountStatusEnum.ERROR,
+                               rental_status=RentalStatusEnum.ERROR)
             await self.deps.notifier.notify(
                 f'Не удалось деавторизовать аккаунт {account.login} (аренда {rental.id}). '
                 f'Аккаунт переведён в ERROR, нужен ручной фикс.',
             )
             return
 
-        await self.account_repo.update({'status': AccountStatusEnum.FREE}, id_=account.id)
-        await self.rental_repo.update({'status': RentalStatusEnum.EXPIRED}, id_=rental.id)
+        await self._finish(account.id, rental.id, AccountStatusEnum.FREE)
         await sync_lot_visibility(self.session, self.deps, account.lot_id)
         await self._notify_buyer(rental.chat_id)
         logger.info(
@@ -80,6 +79,18 @@ class ExpireRentalService:
             rental.id,
             account.id,
         )
+
+    async def _finish(
+        self,
+        account_id: int,
+        rental_id: int,
+        account_status: AccountStatusEnum,
+        rental_status: RentalStatusEnum = RentalStatusEnum.EXPIRED,
+    ) -> None:
+        """Атомарно завершить аренду: статус аккаунта + статус аренды в одной транзакции."""
+        await self.account_repo.update({'status': account_status}, id_=account_id, commit=False)
+        await self.rental_repo.update({'status': rental_status}, id_=rental_id, commit=False)
+        await self.session.commit()
 
     async def _notify_buyer(self, chat_id: int | None) -> None:
         """Сообщить покупателю в чат FunPay, что аренда окончена."""

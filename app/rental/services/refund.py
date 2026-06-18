@@ -33,11 +33,15 @@ class RefundService:
             logger.info('refunded order %s without a rental record', order_id)
             return
 
-        await self.rental_repo.update({'status': RentalStatusEnum.REFUNDED}, id_=rental.id)
-        await self.account_repo.update(
-            {'status': AccountStatusEnum.FREE},
-            id_=rental.account_id,
+        # Возврат на FunPay уже выполнен выше (внешний вызов). Статусы в БД —
+        # атомарно: аренда REFUNDED + аккаунт FREE в одной транзакции.
+        await self.rental_repo.update(
+            {'status': RentalStatusEnum.REFUNDED}, id_=rental.id, commit=False,
         )
+        await self.account_repo.update(
+            {'status': AccountStatusEnum.FREE}, id_=rental.account_id, commit=False,
+        )
+        await self.session.commit()
         await sync_lot_visibility(self.session, self.deps, rental.lot_id)
         if rental.chat_id is not None:
             await self.deps.funpay.send_message(

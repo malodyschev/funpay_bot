@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from logging import getLogger
 from typing import ClassVar
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crypto import decrypt
@@ -72,24 +73,38 @@ class NewOrderService:
             await self._handle_no_free_account(event, event.lot_title)
             return
 
-        await self.account_repo.update({'status': AccountStatusEnum.RENTED}, id_=account.id)
-
         # Кол-во купленных единиц умножает длительность (2 шт. = 2× времени).
         total_minutes = lot.duration_minutes * max(1, event.amount)
         now = datetime.now()
         expires_at = now + timedelta(minutes=total_minutes)
-        rental = await self.rental_repo.create({
-            'account_id': account.id,
-            'lot_id': lot.id,
-            'funpay_order_id': event.order_id,
-            'buyer_id': event.buyer_id,
-            'buyer_username': event.buyer_username,
-            'chat_id': event.chat_id,
-            'started_at': now,
-            'expires_at': expires_at,
-            'status': RentalStatusEnum.ACTIVE,
-        })
 
+        # АТОМАРНО: пометить аккаунт RENTED + создать аренду в ОДНОЙ транзакции.
+        # Блокировка строки аккаунта (FOR UPDATE SKIP LOCKED из pick_free_account)
+        # держится до commit — два инстанса не выдадут один аккаунт. UNIQUE на
+        # funpay_order_id ловит дубль заказа: при гонке проигравший откатывается,
+        # аккаунт НЕ остаётся арендованным (нет «осиротевших» RENTED).
+        try:
+            await self.account_repo.update(
+                {'status': AccountStatusEnum.RENTED}, id_=account.id, commit=False,
+            )
+            rental = await self.rental_repo.create({
+                'account_id': account.id,
+                'lot_id': lot.id,
+                'funpay_order_id': event.order_id,
+                'buyer_id': event.buyer_id,
+                'buyer_username': event.buyer_username,
+                'chat_id': event.chat_id,
+                'started_at': now,
+                'expires_at': expires_at,
+                'status': RentalStatusEnum.ACTIVE,
+            }, commit=False)
+            await self.session.commit()
+        except IntegrityError:
+            await self.session.rollback()
+            logger.info('order %s уже обработан (дубль) — пропускаю', event.order_id)
+            return
+
+        # Сайд-эффекты — ТОЛЬКО после фиксации источника истины (аренда в БД).
         text = render_delivery(
             lot.delivery_template,
             login=account.login,
