@@ -48,3 +48,12 @@ class AccountRepository(Repository[Account]):
         """Все аккаунты лота, по id (для списка в админке)."""
         query = sa.select(Account).where(Account.lot_id == lot_id).order_by(Account.id)
         return await self.scalars(query)
+
+    async def list_free(self) -> Sequence[Account]:
+        """Свободные аккаунты — для периодической проверки логином (не трогаем RENTED)."""
+        query = (
+            sa.select(Account)
+            .where(Account.status == AccountStatusEnum.FREE)
+            .order_by(Account.id)
+        )
+        return await self.scalars(query)

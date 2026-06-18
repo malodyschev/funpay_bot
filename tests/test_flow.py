@@ -426,6 +426,37 @@ async def test_deauth_sessions_any_status(session):
     assert 'Сброшено сессий: 1' in msg
 
 
+async def test_stats_counts_and_revenue(session):
+    lot = await seed_lot(session)
+    lot.price = 100.0
+    await seed_account(session, lot.id)
+    await session.commit()
+    deps = make_deps()
+    await NewOrderService(session, deps).handle(order_event())
+
+    s = await AdminService(session, deps).stats()
+    assert s.rentals_24h == 1 and s.active == 1
+    assert s.revenue_7d == 100.0
+
+
+async def test_kick_reports_deauth_failure(session, monkeypatch):
+    from app.rental.common.exceptions import SteamModuleError
+    from app.rental.services import expire_rental
+
+    monkeypatch.setattr(expire_rental.settings, 'deauthorize_retries', 1)  # без бэкофф-сна
+    lot = await seed_lot(session)
+    acc = await seed_account(session, lot.id)
+    deps = make_deps()
+    await NewOrderService(session, deps).handle(order_event())  # арендует acc
+
+    async def _fail(_creds):
+        raise SteamModuleError('dead')
+
+    deps.steam.deauthorize = _fail
+    msg = await AdminService(session, deps).kick(acc.id)
+    assert 'ERROR' in msg
+
+
 async def test_autodelivery_order_ignored(session):
     lot = await seed_lot(session)
     lot.is_autodelivery = True

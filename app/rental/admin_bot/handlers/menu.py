@@ -35,6 +35,14 @@ async def dashboard(cb: CallbackQuery) -> None:
     await cb.answer()
 
 
+@router.callback_query(Menu.filter(F.action == 'stats'))
+async def stats(cb: CallbackQuery) -> None:
+    async with get_session() as session:
+        data = await AdminService(session, runtime.get_deps()).stats()
+    await cb.message.edit_text(fmt.fmt_stats(data), reply_markup=kb.back_to_menu())
+    await cb.answer()
+
+
 @router.callback_query(Menu.filter(F.action == 'lots'))
 async def lots(cb: CallbackQuery) -> None:
     async with get_session() as session:

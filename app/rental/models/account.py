@@ -32,6 +32,8 @@ class Account(Base):
         default=AccountTypeEnum.ONLINE,
     )
     notes: Mapped[str | None] = mapped_column(sa.Text)
+    # Когда последний раз проверяли аккаунт логином (джоба раз в 6ч).
+    last_check: Mapped[datetime | None] = mapped_column(sa.DateTime)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(
         sa.DateTime,

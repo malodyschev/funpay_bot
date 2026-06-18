@@ -106,3 +106,19 @@ class RentalRepository(Repository[Rental]):
         )
         result = await self.execute(query)
         return result.scalar() or 0
+
+    async def count_since(self, since: datetime) -> int:
+        """Сколько аренд начато с момента since (для статистики)."""
+        query = sa.select(sa.func.count(Rental.id)).where(Rental.started_at >= since)
+        return (await self.execute(query)).scalar() or 0
+
+    async def revenue_since(self, since: datetime) -> float:
+        """Примерная выручка с аренд за период (сумма цены лотов; без учёта продлений)."""
+        from app.rental.models.lot import Lot
+        query = (
+            sa.select(sa.func.coalesce(sa.func.sum(Lot.price), 0.0))
+            .select_from(Rental)
+            .join(Lot, Lot.id == Rental.lot_id)
+            .where(Rental.started_at >= since)
+        )
+        return float((await self.execute(query)).scalar() or 0.0)

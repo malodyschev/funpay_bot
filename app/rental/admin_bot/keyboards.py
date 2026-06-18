@@ -27,6 +27,7 @@ def main_menu() -> InlineKeyboardMarkup:
     kb.button(text='📊 Дашборд', callback_data=Menu(action='dashboard'))
     kb.button(text='🗂 Лоты и аккаунты', callback_data=Menu(action='lots'))
     kb.button(text='📋 Активные аренды', callback_data=Menu(action='rentals'))
+    kb.button(text='📈 Статистика', callback_data=Menu(action='stats'))
     kb.adjust(1)
     return kb.as_markup()
 

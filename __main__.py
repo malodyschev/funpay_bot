@@ -43,6 +43,7 @@ def init_db():
 # идемпотентно: применяется только к тем, что ещё отсутствуют (PostgreSQL).
 _SCHEMA_PATCHES = (
     'ALTER TABLE accounts ADD COLUMN IF NOT EXISTS revocation_code_enc BYTEA',
+    'ALTER TABLE accounts ADD COLUMN IF NOT EXISTS last_check TIMESTAMP',
     'ALTER TABLE rentals ADD COLUMN IF NOT EXISTS warned BOOLEAN NOT NULL DEFAULT FALSE',
     'ALTER TABLE lots ADD COLUMN IF NOT EXISTS is_extension BOOLEAN NOT NULL DEFAULT FALSE',
     'ALTER TABLE lots ADD COLUMN IF NOT EXISTS is_autodelivery BOOLEAN NOT NULL DEFAULT FALSE',
@@ -177,11 +178,13 @@ def run():
 
 
 async def _run() -> None:
+    from app.rental.account_check import run_account_check
     from app.rental.admin_bot.bot import build_admin_bot
     from app.rental.admin_bot.telegram_notifier import TelegramNotifier
     from app.rental.funpay.listener import run_funpay_listener
     from app.rental.funpay.lot_sync import sync_lots
     from app.rental.funpay.real import RealFunPayConnector, build_account
+    from app.rental.funpay_health import run_funpay_health
     from app.rental.poller import run_poller
     from app.rental.raiser import run_raiser
     from app.rental.steam.real import RealSteamModule
@@ -233,6 +236,8 @@ async def _run() -> None:
         asyncio.create_task(run_poller()),
         asyncio.create_task(run_funpay_listener(account)),
         asyncio.create_task(run_raiser()),
+        asyncio.create_task(run_funpay_health()),
+        asyncio.create_task(run_account_check()),
     ]
     logger.info('admin bot started (funpay=real)')
     try:

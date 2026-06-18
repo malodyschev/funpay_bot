@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from logging import getLogger
 from typing import ClassVar
 
@@ -73,6 +74,18 @@ class Credentials:
 
 
 @dataclass
+class Stats:
+    """Сводная статистика по арендам (для экрана статистики)."""
+
+    rentals_24h: int
+    rentals_7d: int
+    rentals_30d: int
+    active: int
+    revenue_7d: float
+    revenue_30d: float
+
+
+@dataclass
 class AdminService:
     """Чтение и ручные действия админки (переиспользует боевые сервисы)."""
 
@@ -89,6 +102,18 @@ class AdminService:
         return Dashboard(
             status_counts=await self.account_repo.counts_by_status(),
             active_rentals=await self.rental_repo.count_active(),
+        )
+
+    async def stats(self) -> Stats:
+        """Сводка по арендам за периоды + примерная выручка (по цене лотов)."""
+        now = datetime.now()
+        return Stats(
+            rentals_24h=await self.rental_repo.count_since(now - timedelta(days=1)),
+            rentals_7d=await self.rental_repo.count_since(now - timedelta(days=7)),
+            rentals_30d=await self.rental_repo.count_since(now - timedelta(days=30)),
+            active=await self.rental_repo.count_active(),
+            revenue_7d=await self.rental_repo.revenue_since(now - timedelta(days=7)),
+            revenue_30d=await self.rental_repo.revenue_since(now - timedelta(days=30)),
         )
 
     async def lots_with_stock(self) -> list[LotStock]:
@@ -163,6 +188,13 @@ class AdminService:
         if not rental:
             return 'У аккаунта нет активной аренды.'
         await ExpireRentalService(self.session, self.deps).handle(rental.id)
+        # Истечение могло упасть на деавторизации → аккаунт в ERROR (не освобождён).
+        account = await self.account_repo.get_or_none(id_=account_id)
+        if account and account.status == AccountStatusEnum.ERROR:
+            return (
+                '⚠️ Аренда закрыта, но ДЕАВТОРИЗАЦИЯ НЕ УДАЛАСЬ — аккаунт в ERROR, '
+                'в пул не возвращён. Нужен ручной разбор (сессии могли остаться).'
+            )
         return 'Аренда завершена досрочно, аккаунт деавторизован и возвращён в пул.'
 
     async def free_without_deauth(self, account_id: int) -> str:

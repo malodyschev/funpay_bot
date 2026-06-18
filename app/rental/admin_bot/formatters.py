@@ -4,8 +4,22 @@ from datetime import UTC, datetime
 
 from app.rental.common.enums import AccountStatusEnum
 from app.rental.models.lot import Lot
-from app.rental.services.admin import AccountView, Dashboard, LotStock, RentalView
+from app.rental.services.admin import AccountView, Dashboard, LotStock, RentalView, Stats
 from app.rental.steam.interface import SteamSessionInfo
+
+
+def fmt_stats(s: Stats) -> str:
+    """Экран статистики по арендам."""
+    return (
+        '📈 <b>Статистика аренд</b>\n\n'
+        f'За 24 часа: <b>{s.rentals_24h}</b>\n'
+        f'За 7 дней: <b>{s.rentals_7d}</b>\n'
+        f'За 30 дней: <b>{s.rentals_30d}</b>\n'
+        f'Сейчас активны: <b>{s.active}</b>\n\n'
+        '💰 Выручка (примерно, по цене лотов; без учёта продлений):\n'
+        f'7 дней: <b>{s.revenue_7d:.0f} ₽</b>\n'
+        f'30 дней: <b>{s.revenue_30d:.0f} ₽</b>'
+    )
 
 
 def lot_mark(ls: LotStock) -> str:
