@@ -3,12 +3,12 @@ import html
 
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from app.database import get_session
 from app.rental.admin_bot import formatters as fmt, keyboards as kb
 from app.rental.admin_bot.callbacks import Menu
-from app.rental.funpay.orders import fetch_unconfirmed
+from app.rental.funpay.orders import fetch_unconfirmed, format_report
 from app.rental.services.admin import AdminService
 from app.runtime import runtime
 
@@ -39,15 +39,11 @@ async def unconfirmed_orders(message: Message) -> None:
     if not orders:
         await message.answer('✅ Неподтверждённых заказов нет.')
         return
-    lines = [
-        f'<code>#{html.escape(o.id)}</code> — {html.escape(o.buyer)} — '
-        f'{html.escape(o.description[:40])}'
-        for o in orders[:50]
-    ]
-    text = f'🧾 <b>Неподтверждённые заказы ({len(orders)})</b>\n' + '\n'.join(lines)
-    if len(orders) > 50:
-        text += f'\n… и ещё {len(orders) - 50}'
-    await message.answer(text)
+    content = format_report(orders).encode('utf-8')
+    await message.answer_document(
+        BufferedInputFile(content, filename='unconfirmed_orders.txt'),
+        caption=f'🧾 Неподтверждённые заказы: {len(orders)}',
+    )
 
 
 @router.message(Command('backup'))

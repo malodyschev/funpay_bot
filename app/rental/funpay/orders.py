@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from logging import getLogger
 
+from app.rental.common.commands import funpay_order_url
+
 
 logger = getLogger(__name__)
 
@@ -41,3 +43,14 @@ def fetch_unconfirmed(account, max_pages: int = 20) -> list[UnconfirmedOrder]:
             break
         start_from = next_id
     return result
+
+
+def format_report(orders: list[UnconfirmedOrder]) -> str:
+    """Пронумерованный отчёт с полными названиями и ссылками на заказы (для .txt)."""
+    blocks = [
+        f'{i}. #{o.id} — {o.buyer}\n'
+        f'   {o.description}\n'
+        f'   {funpay_order_url(o.id)}'
+        for i, o in enumerate(orders, 1)
+    ]
+    return '\n\n'.join(blocks)

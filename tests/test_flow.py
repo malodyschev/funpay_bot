@@ -506,6 +506,18 @@ def test_fetch_unconfirmed_orders():
     assert orders[0].buyer == 'b1'
 
 
+def test_orders_report_numbered_with_links():
+    from app.rental.funpay.orders import UnconfirmedOrder, format_report
+
+    txt = format_report([
+        UnconfirmedOrder(id='AB12', buyer='b1', description='🏆 Dota аккаунт 5400 ММР'),
+        UnconfirmedOrder(id='CD34', buyer='b2', description='Продление'),
+    ])
+    assert '1. #AB12 — b1' in txt and '2. #CD34 — b2' in txt
+    assert '🏆 Dota аккаунт 5400 ММР' in txt  # полное название, не обрезано
+    assert 'https://funpay.com/orders/AB12/' in txt
+
+
 async def test_autodelivery_order_ignored(session):
     lot = await seed_lot(session)
     lot.is_autodelivery = True

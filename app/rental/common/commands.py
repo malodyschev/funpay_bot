@@ -24,6 +24,11 @@ def funpay_lot_url(funpay_lot_id: int) -> str:
     return f'https://funpay.com/lots/offer?id={funpay_lot_id}'
 
 
+def funpay_order_url(order_id: str) -> str:
+    """Ссылка на страницу заказа FunPay (order_id без '#')."""
+    return f'https://funpay.com/orders/{order_id.lstrip("#")}/'
+
+
 FAQ_TEXT = (
     '⚙️ Команды бота\n'
     '\n'
