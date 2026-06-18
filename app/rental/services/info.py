@@ -96,7 +96,15 @@ class InfoService:
         )
 
     async def extend_info(self, chat_id: int) -> None:
-        """!extend — прислать прямую ссылку на лот продления (или инструкцию, если его нет)."""
+        """!extend — ссылка на продление, но только если у покупателя есть активная аренда."""
+        rental = await self.rental_repo.get_active_by_chat(chat_id)
+        if not rental:
+            await self.deps.funpay.send_message(
+                chat_id,
+                'У вас нет активной аренды для продления 🤷\n'
+                'Чтобы арендовать — откройте лоты в профиле продавца и оформите заказ.',
+            )
+            return
         offer = await self._extension_offer()
         if offer is None:
             await self.deps.funpay.send_message(chat_id, EXTEND_TEXT)

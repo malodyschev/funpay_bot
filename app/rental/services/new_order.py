@@ -48,6 +48,11 @@ class NewOrderService:
             )
             return
 
+        if lots[0].is_autodelivery:
+            # автовыдачу обрабатывает сам FunPay — мы не вмешиваемся
+            logger.info('order %s — лот автовыдачи %r, пропускаем', event.order_id, event.lot_title)
+            return
+
         if lots[0].is_extension:
             await self._handle_extension(event, lots[0])
             return

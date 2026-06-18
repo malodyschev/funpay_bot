@@ -277,6 +277,12 @@ async def test_w5_refund_releases_account(session):
 
 
 async def test_extend_command_gives_link(session):
+    # нужна активная аренда на чате 555 — иначе extend просит идти покупать
+    rental_lot = await seed_lot(session)
+    await seed_account(session, rental_lot.id)
+    deps = make_deps()
+    await NewOrderService(session, deps).handle(order_event())  # арендует chat 555
+
     ext = Lot(
         title='Продление Dota +1 час',
         duration_minutes=60,
@@ -287,7 +293,6 @@ async def test_extend_command_gives_link(session):
     )
     session.add(ext)
     await session.commit()
-    deps = make_deps()
 
     await InfoService(session, deps).extend_info(555)
     text = deps.funpay.sent[-1][1]
@@ -375,15 +380,17 @@ def test_lot_mark():
     from app.rental.admin_bot.formatters import lot_mark
     from app.rental.services.admin import LotStock
 
-    def ls(*, active=True, ext=False, free=0, rented=0):
-        lot = SimpleNamespace(active=active, is_extension=ext)
+    def ls(*, active=True, ext=False, auto=False, free=0, rented=0):
+        lot = SimpleNamespace(active=active, is_extension=ext, is_autodelivery=auto)
         return LotStock(lot=lot, free=free, total=1, rented=rented)
 
-    assert lot_mark(ls(active=False)) == '⚪️'           # выключен
+    assert lot_mark(ls(active=False)) == '⚪️'           # скрыт/выключен
     assert lot_mark(ls(free=2)) == '🟢'                  # есть свободные
     assert lot_mark(ls(free=0, rented=1)) == '🔵'        # скрыт — все в аренде
     assert lot_mark(ls(free=0, rented=0)) == '🔴'        # скрыт — нет свободных
     assert lot_mark(ls(ext=True, free=0)) == '🟢'        # продление всегда видно
+    assert lot_mark(ls(auto=True)) == '🟡'               # автовыдача видна
+    assert lot_mark(ls(auto=True, active=False)) == '⚪️'  # автовыдача скрыта
 
 
 def test_fmt_sessions():
@@ -395,18 +402,47 @@ def test_fmt_sessions():
     assert 'Chrome' in txt and 'RU' in txt
 
 
-async def test_toggle_lot_extension(session):
+async def test_set_lot_type(session):
     lot = await seed_lot(session)
     svc = AdminService(session, make_deps())
-    assert lot.is_extension is False
 
-    assert await svc.toggle_lot_extension(lot.id) is True
-    refreshed = await svc.get_lot(lot.id)
-    assert refreshed.is_extension is True
+    assert await svc.set_lot_type(lot.id, 'extension') is True
+    r = await svc.get_lot(lot.id)
+    assert r.is_extension and not r.is_autodelivery
 
-    assert await svc.toggle_lot_extension(lot.id) is False
-    refreshed = await svc.get_lot(lot.id)
-    assert refreshed.is_extension is False
+    assert await svc.set_lot_type(lot.id, 'autodelivery') is True
+    r = await svc.get_lot(lot.id)
+    assert r.is_autodelivery and not r.is_extension  # типы взаимоисключающие
+
+    assert await svc.set_lot_type(lot.id, 'rental') is True
+    r = await svc.get_lot(lot.id)
+    assert not r.is_extension and not r.is_autodelivery
+
+
+async def test_deauth_sessions_any_status(session):
+    lot = await seed_lot(session)
+    acc = await seed_account(session, lot.id)  # FREE, без аренды
+    msg = await AdminService(session, make_deps()).deauth_sessions(acc.id)
+    assert 'Сброшено сессий: 1' in msg
+
+
+async def test_autodelivery_order_ignored(session):
+    lot = await seed_lot(session)
+    lot.is_autodelivery = True
+    await session.commit()
+    await seed_account(session, lot.id)
+    deps = make_deps()
+
+    await NewOrderService(session, deps).handle(order_event())
+
+    assert await RentalRepository(session).get_by_order_id('ORDER-1') is None
+    assert deps.funpay.sent == []  # бот не вмешивается в автовыдачу
+
+
+async def test_extend_requires_active_rental(session):
+    deps = make_deps()
+    await InfoService(session, deps).extend_info(555)  # нет аренды
+    assert 'нет активной аренды' in deps.funpay.sent[-1][1].lower()
 
 
 async def test_w6_info_commands(session):

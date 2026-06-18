@@ -21,8 +21,8 @@ async def sync_lot_visibility(session: AsyncSession, deps: RentalDeps, lot_id: i
     админу — иначе «лот не скрылся» молча.
     """
     lot = await LotRepository(session).get_or_none(id_=lot_id)
-    if not lot or lot.is_extension:
-        return
+    if not lot or lot.is_extension or lot.is_autodelivery:
+        return  # продления и автовыдачу бот по наличию аккаунтов не скрывает
     if lot.funpay_lot_id is None:
         logger.warning('lot %s ("%s") без funpay_lot_id — видимость не меняем', lot_id, lot.title)
         return

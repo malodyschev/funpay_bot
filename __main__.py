@@ -45,6 +45,7 @@ _SCHEMA_PATCHES = (
     'ALTER TABLE accounts ADD COLUMN IF NOT EXISTS revocation_code_enc BYTEA',
     'ALTER TABLE rentals ADD COLUMN IF NOT EXISTS warned BOOLEAN NOT NULL DEFAULT FALSE',
     'ALTER TABLE lots ADD COLUMN IF NOT EXISTS is_extension BOOLEAN NOT NULL DEFAULT FALSE',
+    'ALTER TABLE lots ADD COLUMN IF NOT EXISTS is_autodelivery BOOLEAN NOT NULL DEFAULT FALSE',
     'ALTER TABLE lots ADD COLUMN IF NOT EXISTS removed BOOLEAN NOT NULL DEFAULT FALSE',
     'ALTER TABLE lots ADD COLUMN IF NOT EXISTS funpay_lot_id INTEGER',
     'ALTER TABLE extensions ADD COLUMN IF NOT EXISTS funpay_order_id TEXT',
@@ -192,6 +193,9 @@ async def _run() -> None:
         raise click.ClickException('нужны BOT_TOKEN и ADMIN_ID/ADMIN_IDS в .env')
 
     bot, dp = build_admin_bot(settings.bot_token, admin_ids)
+    # Кнопка «Меню» слева внизу в Telegram → команда /start (открыть меню).
+    from aiogram.types import BotCommand
+    await bot.set_my_commands([BotCommand(command='start', description='Открыть меню')])
 
     # Боевой FunPay обязателен (режим симуляции удалён). Нет golden_key или
     # авторизация не прошла → не стартуем с понятной ошибкой, чтобы не было

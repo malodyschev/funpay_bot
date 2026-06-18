@@ -11,11 +11,13 @@ from app.rental.steam.interface import SteamSessionInfo
 def lot_mark(ls: LotStock) -> str:
     """Индикатор состояния лота (его видимость на FunPay).
 
-    ⚪️ выключен вручную · 🟢 виден (есть свободные) ·
+    ⚪️ скрыт/выключен · 🟡 автовыдача (видна) · 🟢 аренда видна (есть свободные) ·
     🔵 скрыт — все аккаунты в аренде · 🔴 скрыт — нет свободных аккаунтов.
     """
     if not ls.lot.active:
         return '⚪️'
+    if ls.lot.is_autodelivery:
+        return '🟡'
     if ls.lot.is_extension or ls.free > 0:
         return '🟢'
     if ls.rented > 0:
@@ -118,6 +120,10 @@ def fmt_dashboard(dash: Dashboard, lots: list[LotStock]) -> str:
             if ls.lot.is_extension:
                 lines.append(f'⏱ {html.escape(ls.lot.title)} — продление')
                 continue
+            if ls.lot.is_autodelivery:
+                mark = '🟡' if ls.lot.active else '⚪️'
+                lines.append(f'{mark} {html.escape(ls.lot.title)} — автовыдача')
+                continue
             if not ls.lot.active:
                 tail = ' — выключен'
             elif ls.free:
@@ -134,17 +140,25 @@ def fmt_dashboard(dash: Dashboard, lots: list[LotStock]) -> str:
 
 def fmt_lot(lot: Lot, n_accounts: int) -> str:
     """Шапка лота с конфигурацией (для экрана лота)."""
-    kind = '⏱ Продление' if lot.is_extension else '🎮 Аренда'
+    if lot.is_autodelivery:
+        kind = '🟡 Автовыдача'
+    elif lot.is_extension:
+        kind = '⏱ Продление'
+    else:
+        kind = '🎮 Аренда'
     status = '🟢 активен' if lot.active else '⚪️ выключен'
-    dur = f'{lot.duration_minutes} мин.' + ('' if lot.duration_minutes else ' ⚠️ не задана')
     lines = [
         f'🗂 <b>{html.escape(lot.title)}</b>',
         f'{kind} · {status}',
-        f'Длительность: {dur}',
     ]
+    if lot.is_autodelivery:
+        lines.append('Бот этот лот не обрабатывает — выдачей занимается FunPay.')
+    else:
+        dur = f'{lot.duration_minutes} мин.' + ('' if lot.duration_minutes else ' ⚠️ не задана')
+        lines.append(f'Длительность: {dur}')
     if lot.funpay_lot_id:
         lines.append(f'FunPay оффер: <code>{lot.funpay_lot_id}</code>')
-    if not lot.is_extension:
+    if not lot.is_extension and not lot.is_autodelivery:
         lines.append(f'Аккаунтов: {n_accounts}')
     if not lot.active:
         lines.append('\n⚠️ Лот выключен — заказы по нему не обрабатываются.')

@@ -16,7 +16,7 @@ class LotOpen(CallbackData, prefix='lot'):
 class Acc(CallbackData, prefix='a'):
     """Действие над аккаунтом.
 
-    action: open | reveal | sessions | notes | extend |
+    action: open | reveal | sessions | deauth | notes | extend |
             kick | kick_yes | release | offline | banned | banned_yes | activate
     """
 
@@ -51,7 +51,7 @@ class BindAccount(CallbackData, prefix='bindacc'):
 
 
 class LotAct(CallbackData, prefix='la'):
-    """Действие над лотом: action=duration|toggle_active|toggle_ext, lot_id."""
+    """Действие над лотом: action=duration|toggle_active|type_rental|type_ext|type_auto, lot_id."""
 
     action: str
     lot_id: int

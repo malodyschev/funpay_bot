@@ -239,15 +239,32 @@ class AdminService:
         await sync_lot_visibility(self.session, self.deps, lot_id)
         return new_active
 
-    async def toggle_lot_extension(self, lot_id: int) -> bool | None:
-        """Переключить тип лота: аренда ↔ продление (is_extension)."""
-        lot = await self.lot_repo.get_or_none(id_=lot_id)
-        if not lot:
-            return None
-        new_ext = not lot.is_extension
-        await self.lot_repo.update({'is_extension': new_ext}, id_=lot_id)
+    # Типы лота взаимоисключающие: аренда / продление / автовыдача.
+    _LOT_TYPE_FLAGS: ClassVar[dict[str, tuple[bool, bool]]] = {
+        'rental': (False, False),       # (is_extension, is_autodelivery)
+        'extension': (True, False),
+        'autodelivery': (False, True),
+    }
+
+    async def set_lot_type(self, lot_id: int, kind: str) -> bool:
+        """Задать тип лота: 'rental' | 'extension' | 'autodelivery' (взаимоисключающе)."""
+        is_ext, is_auto = self._LOT_TYPE_FLAGS[kind]
+        if not await self.lot_repo.get_or_none(id_=lot_id):
+            return False
+        await self.lot_repo.update(
+            {'is_extension': is_ext, 'is_autodelivery': is_auto},
+            id_=lot_id,
+        )
         await sync_lot_visibility(self.session, self.deps, lot_id)
-        return new_ext
+        return True
+
+    async def deauth_sessions(self, account_id: int) -> str:
+        """Сбросить все Steam-сессии аккаунта (выкинуть всех), независимо от аренды."""
+        account = await self.account_repo.get_or_none(id_=account_id)
+        if not account:
+            return 'Аккаунт не найден.'
+        revoked = await self.deps.steam.deauthorize(build_credentials(account))
+        return f'Сброшено сессий: {revoked}. Все, кто был залогинен, выкинуты из Steam.'
 
     async def create_lot(
         self,

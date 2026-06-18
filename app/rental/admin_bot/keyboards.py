@@ -64,28 +64,36 @@ def lots_menu(lots: list[LotStock]) -> InlineKeyboardMarkup:
 
 def lot_accounts(views: list[AccountView], lot: Lot) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    for v in views:
+    # Внутренности зависят от типа: у автовыдачи внутри ничего нет.
+    if not lot.is_extension and not lot.is_autodelivery:
+        for v in views:
+            kb.button(
+                text=account_button_label(v),
+                callback_data=Acc(action='open', account_id=v.account.id),
+            )
         kb.button(
-            text=account_button_label(v),
-            callback_data=Acc(action='open', account_id=v.account.id),
+            text=f'⏱ Длительность ({lot.duration_minutes} мин)',
+            callback_data=LotAct(action='duration', lot_id=lot.id),
         )
-    kb.button(
-        text=(
-            f'⏱ Добавляет ({lot.duration_minutes} мин)'
-            if lot.is_extension
-            else f'⏱ Длительность ({lot.duration_minutes} мин)'
-        ),
-        callback_data=LotAct(action='duration', lot_id=lot.id),
-    )
+    elif lot.is_extension:
+        kb.button(
+            text=f'⏱ Добавляет ({lot.duration_minutes} мин)',
+            callback_data=LotAct(action='duration', lot_id=lot.id),
+        )
     kb.button(
         text='⚪️ Выключить лот' if lot.active else '🟢 Включить лот',
         callback_data=LotAct(action='toggle_active', lot_id=lot.id),
     )
-    kb.button(
-        text='🎮 Сделать арендой' if lot.is_extension else '⏱ Сделать продлением',
-        callback_data=LotAct(action='toggle_ext', lot_id=lot.id),
-    )
-    if not lot.is_extension:
+    # Кнопки смены типа — показываем те, которыми лот сейчас НЕ является.
+    current = 'auto' if lot.is_autodelivery else ('ext' if lot.is_extension else 'rental')
+    for action, label in (
+        ('type_rental', '🎮 Сделать арендой'),
+        ('type_ext', '⏱ Сделать продлением'),
+        ('type_auto', '🟡 Сделать автовыдачей'),
+    ):
+        if action != f'type_{current}':
+            kb.button(text=label, callback_data=LotAct(action=action, lot_id=lot.id))
+    if not lot.is_extension and not lot.is_autodelivery:
         kb.button(text='🔑 Привязать (логин+пароль)', callback_data=BindAccount(lot_id=lot.id))
         kb.button(text='📄 Добавить по maFile', callback_data=AddAccount(lot_id=lot.id))
     kb.button(text='⬅️ К лотам', callback_data=Menu(action='lots'))
@@ -99,6 +107,7 @@ def account_card(view: AccountView) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text='🔐 Показать креды', callback_data=Acc(action='reveal', account_id=acc.id))
     kb.button(text='🌐 Активные сессии', callback_data=Acc(action='sessions', account_id=acc.id))
+    kb.button(text='🚪 Сбросить сессии', callback_data=Acc(action='deauth', account_id=acc.id))
 
     if acc.status == AccountStatusEnum.RENTED:
         kb.button(text='⛔ Досрочный кик', callback_data=Acc(action='kick', account_id=acc.id))
@@ -126,7 +135,7 @@ def move_picker(account_id: int, lots: list[LotStock], current_lot_id: int) -> I
     """Выбор целевого лота для перемещения аккаунта (без лотов-продлений и текущего)."""
     kb = InlineKeyboardBuilder()
     for ls in lots:
-        if ls.lot.is_extension or ls.lot.id == current_lot_id:
+        if ls.lot.is_extension or ls.lot.is_autodelivery or ls.lot.id == current_lot_id:
             continue
         kb.button(
             text=f'{ls.lot.title} ({ls.free}/{ls.total})',

@@ -96,6 +96,20 @@ async def show_sessions(cb: CallbackQuery, callback_data: Acc) -> None:
     await cb.message.answer(fmt.fmt_sessions(sessions))
 
 
+@router.callback_query(Acc.filter(F.action == 'deauth'))
+async def deauth_account(cb: CallbackQuery, callback_data: Acc) -> None:
+    await cb.answer('Сбрасываю сессии в Steam…')  # логин+отзыв, пара секунд
+    try:
+        async with get_session() as session:
+            svc = AdminService(session, runtime.get_deps())
+            result = await svc.deauth_sessions(callback_data.account_id)
+    except SteamModuleError as exc:
+        await cb.message.answer(f'⚠️ {html.escape(str(exc))}')
+        return
+    await cb.message.answer(f'✅ {result}')
+    await _show_card(cb, callback_data.account_id)
+
+
 @router.callback_query(Acc.filter(F.action == 'extend'))
 async def extend_menu(cb: CallbackQuery, callback_data: Acc) -> None:
     await cb.message.edit_reply_markup(reply_markup=kb.extend_options(callback_data.account_id))
