@@ -28,6 +28,15 @@ class LotRepository(Repository[Lot]):
         result = await self.execute(query)
         return [(row[0], int(row[1])) for row in result.all()]
 
+    async def list_by_category(self, category_id: int) -> Sequence[Lot]:
+        """Лоты, привязанные напрямую к этой категории-листу (для навигации в админке)."""
+        query = (
+            sa.select(Lot)
+            .where(Lot.category_id == category_id, Lot.removed.is_(False))
+            .order_by(Lot.title, Lot.id)
+        )
+        return await self.scalars(query)
+
     async def get_extension_lot(self) -> Lot | None:
         """Активный лот-продление (пока он один на весь бот — для ссылки в !extend)."""
         query = (

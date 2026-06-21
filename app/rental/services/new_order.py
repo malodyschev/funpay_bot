@@ -6,16 +6,16 @@ from typing import ClassVar
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.crypto import decrypt
 from app.rental.common.enums import AccountStatusEnum, ExtensionReasonEnum, RentalStatusEnum
 from app.rental.funpay.events import NewOrderEvent
 from app.rental.models.lot import Lot
+from app.rental.providers.registry import get_provider
 from app.rental.repositories.account import AccountRepository
+from app.rental.repositories.category import CategoryRepository
 from app.rental.repositories.extension import ExtensionRepository
 from app.rental.repositories.lot import LotRepository
 from app.rental.repositories.rental import RentalRepository
 from app.rental.services.base import get_repository
-from app.rental.services.delivery import render_delivery
 from app.rental.services.extend_rental import ExtendRentalService
 from app.rental.services.lot_visibility import sync_lot_visibility
 from app.runtime import RentalDeps
@@ -34,6 +34,7 @@ class NewOrderService:
     rental_repo: ClassVar[RentalRepository] = get_repository(RentalRepository)
     lot_repo: ClassVar[LotRepository] = get_repository(LotRepository)
     extension_repo: ClassVar[ExtensionRepository] = get_repository(ExtensionRepository)
+    category_repo: ClassVar[CategoryRepository] = get_repository(CategoryRepository)
 
     async def handle(self, event: NewOrderEvent) -> None:
         """Process a new paid order."""
@@ -105,12 +106,11 @@ class NewOrderService:
             return
 
         # Сайд-эффекты — ТОЛЬКО после фиксации источника истины (аренда в БД).
-        text = render_delivery(
-            lot.delivery_template,
-            login=account.login,
-            password=decrypt(account.password_enc),
-            minutes=total_minutes,
-            game=lot.game or '',
+        # Текст выдачи формирует провайдер категории (Steam — креды+срок по шаблону).
+        _, provider_enum = await self.category_repo.resolve(lot.category_id)
+        provider = get_provider(provider_enum, self.deps)
+        text = await provider.build_delivery_text(
+            lot=lot, account=account, minutes=total_minutes,
         )
         await self.deps.funpay.send_message(event.chat_id, text)
         await sync_lot_visibility(self.session, self.deps, lot.id)

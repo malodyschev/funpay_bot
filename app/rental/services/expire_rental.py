@@ -12,10 +12,12 @@ from app.rental.common.enums import (
     RentalStatusEnum,
 )
 from app.rental.models.account import Account
+from app.rental.providers.registry import get_provider
 from app.rental.repositories.account import AccountRepository
+from app.rental.repositories.category import CategoryRepository
+from app.rental.repositories.lot import LotRepository
 from app.rental.repositories.rental import RentalRepository
 from app.rental.services.base import get_repository
-from app.rental.services.credentials import build_credentials
 from app.rental.services.lot_visibility import sync_lot_visibility
 from app.runtime import RentalDeps
 
@@ -38,6 +40,8 @@ class ExpireRentalService:
     deps: RentalDeps
     rental_repo: ClassVar[RentalRepository] = get_repository(RentalRepository)
     account_repo: ClassVar[AccountRepository] = get_repository(AccountRepository)
+    lot_repo: ClassVar[LotRepository] = get_repository(LotRepository)
+    category_repo: ClassVar[CategoryRepository] = get_repository(CategoryRepository)
 
     async def handle(self, rental_id: int) -> None:
         """End a rental: deauthorize sessions for online accounts, free the account."""
@@ -103,11 +107,13 @@ class ExpireRentalService:
 
     async def _deauthorize_with_retries(self, account: Account) -> bool:
         """Try to deauthorize the account's sessions with exponential backoff."""
-        credentials = build_credentials(account)
+        lot = await self.lot_repo.get_or_none(id_=account.lot_id)
+        _, provider_enum = await self.category_repo.resolve(lot.category_id if lot else None)
+        provider = get_provider(provider_enum, self.deps)
         delay = 2
         for attempt in range(1, settings.deauthorize_retries + 1):
             try:
-                await self.deps.steam.deauthorize(credentials)
+                await provider.deauthorize(account)
             except Exception:
                 logger.warning(
                     'deauthorize failed for account %s (attempt %s/%s)',

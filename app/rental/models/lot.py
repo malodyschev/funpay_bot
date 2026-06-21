@@ -12,6 +12,12 @@ class Lot(Base):
     __tablename__ = 'lots'
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Категория-лист, к которой привязан лот (провайдер/тип выдачи наследуются от неё).
+    # NULL — старые лоты до введения категорий: трактуются как Steam-аренда.
+    category_id: Mapped[int | None] = mapped_column(
+        sa.ForeignKey('categories.id'),
+        index=True,
+    )
     funpay_node_id: Mapped[int | None] = mapped_column(sa.Integer)  # подкатегория FunPay
     funpay_lot_id: Mapped[int | None] = mapped_column(sa.Integer, unique=True)  # оффер FunPay
     # Название НЕ уникально: несколько офферов (=лотов) могут называться одинаково.

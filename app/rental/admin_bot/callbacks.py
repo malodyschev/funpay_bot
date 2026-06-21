@@ -7,6 +7,17 @@ class Menu(CallbackData, prefix='m'):
     action: str
 
 
+class Cat(CallbackData, prefix='cat'):
+    """Навигация по дереву категорий.
+
+    action: open (показать узел) | add (новая подкатегория) | add_lot (новый лот сюда).
+    category_id: id узла; 0 — корень дерева.
+    """
+
+    action: str
+    category_id: int
+
+
 class LotOpen(CallbackData, prefix='lot'):
     """Открыть список аккаунтов лота."""
 

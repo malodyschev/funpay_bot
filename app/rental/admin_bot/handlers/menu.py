@@ -7,7 +7,7 @@ from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from app.database import get_session
 from app.rental.admin_bot import formatters as fmt, keyboards as kb
-from app.rental.admin_bot.callbacks import Menu
+from app.rental.admin_bot.callbacks import Cat, Menu
 from app.rental.funpay.orders import fetch_unconfirmed, format_report
 from app.rental.services.admin import AdminService
 from app.runtime import runtime
@@ -84,18 +84,20 @@ async def stats(cb: CallbackQuery) -> None:
 
 @router.callback_query(Menu.filter(F.action == 'lots'))
 async def lots(cb: CallbackQuery) -> None:
+    """Открыть каталог категорий (корень дерева)."""
+    await _show_category(cb, None)
+
+
+@router.callback_query(Cat.filter(F.action == 'open'))
+async def open_category(cb: CallbackQuery, callback_data: Cat) -> None:
+    """Открыть узел дерева категорий (0 — корень)."""
+    await _show_category(cb, callback_data.category_id or None)
+
+
+async def _show_category(cb: CallbackQuery, category_id: int | None) -> None:
     async with get_session() as session:
-        svc = AdminService(session, runtime.get_deps())
-        lots = await svc.lots_with_stock()
-    text = (
-        'Нет лотов. Создай лот через CLI.'
-        if not lots
-        else (
-            '🗂 <b>Лоты</b> — выбери лот:\n'
-            '🟢 виден · 🔵 скрыт (все в аренде) · 🔴 скрыт (нет свободных) · ⚪️ выключен'
-        )
-    )
-    await cb.message.edit_text(text, reply_markup=kb.lots_menu(lots))
+        browse = await AdminService(session, runtime.get_deps()).browse(category_id)
+    await cb.message.edit_text(fmt.fmt_category(browse), reply_markup=kb.category_menu(browse))
     await cb.answer()
 
 

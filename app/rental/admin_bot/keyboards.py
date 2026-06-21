@@ -5,6 +5,7 @@ from app.rental.admin_bot.callbacks import (
     Acc,
     AddAccount,
     BindAccount,
+    Cat,
     Extend,
     LotAct,
     LotOpen,
@@ -14,12 +15,13 @@ from app.rental.admin_bot.callbacks import (
 )
 from app.rental.admin_bot.formatters import (
     account_button_label,
-    lot_mark,
+    category_button_label,
+    lot_button_label,
     rental_button_label,
 )
-from app.rental.common.enums import AccountStatusEnum
+from app.rental.common.enums import AccountStatusEnum, ProviderEnum
 from app.rental.models.lot import Lot
-from app.rental.services.admin import AccountView, LotStock, RentalView
+from app.rental.services.admin import AccountView, CategoryBrowse, LotStock, RentalView
 
 
 def main_menu() -> InlineKeyboardMarkup:
@@ -48,17 +50,43 @@ def lot_kind() -> InlineKeyboardMarkup:
 
 
 def lots_menu(lots: list[LotStock]) -> InlineKeyboardMarkup:
+    """Плоский список всех лотов (вторичный экран — после синка/создания лота)."""
     kb = InlineKeyboardBuilder()
     for ls in lots:
-        mark = lot_mark(ls)
-        if ls.lot.is_extension:
-            label = f'{mark} ⏱ {ls.lot.title} (продление)'
-        else:
-            label = f'{mark} {ls.lot.title} ({ls.free}/{ls.total})'
-        kb.button(text=label, callback_data=LotOpen(lot_id=ls.lot.id))
+        kb.button(text=lot_button_label(ls), callback_data=LotOpen(lot_id=ls.lot.id))
     kb.button(text='🔄 Синхр. с FunPay', callback_data=Menu(action='sync'))
-    kb.button(text='➕ Добавить лот', callback_data=Menu(action='add_lot'))
     kb.button(text='⬅️ В меню', callback_data=Menu(action='menu'))
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def category_menu(browse: CategoryBrowse) -> InlineKeyboardMarkup:
+    """Экран узла дерева: подкатегории + лоты под ним + управление + навигация."""
+    kb = InlineKeyboardBuilder()
+    for child in browse.children:
+        kb.button(
+            text=category_button_label(child),
+            callback_data=Cat(action='open', category_id=child.id),
+        )
+    for ls in browse.lots:
+        kb.button(text=lot_button_label(ls), callback_data=LotOpen(lot_id=ls.lot.id))
+
+    node = browse.node
+    node_id = node.id if node else 0
+    kb.button(text='➕ Подкатегория', callback_data=Cat(action='add', category_id=node_id))
+    # Лот добавляем только в лист (узел без подкатегорий) — лоты живут на листьях.
+    if node is not None and not browse.children:
+        kb.button(text='➕ Лот сюда', callback_data=Cat(action='add_lot', category_id=node_id))
+    if browse.provider == ProviderEnum.STEAM:
+        kb.button(text='🔄 Синхр. с FunPay', callback_data=Menu(action='sync'))
+
+    if node is None:
+        kb.button(text='⬅️ В меню', callback_data=Menu(action='menu'))
+    else:
+        kb.button(
+            text='⬅️ Назад',
+            callback_data=Cat(action='open', category_id=node.parent_id or 0),
+        )
     kb.adjust(1)
     return kb.as_markup()
 
@@ -97,7 +125,11 @@ def lot_accounts(views: list[AccountView], lot: Lot) -> InlineKeyboardMarkup:
     if not lot.is_extension and not lot.is_autodelivery:
         kb.button(text='🔑 Привязать (логин+пароль)', callback_data=BindAccount(lot_id=lot.id))
         kb.button(text='📄 Добавить по maFile', callback_data=AddAccount(lot_id=lot.id))
-    kb.button(text='⬅️ К лотам', callback_data=Menu(action='lots'))
+    # Назад — в категорию лота (legacy-лоты без категории → корень дерева).
+    kb.button(
+        text='⬅️ К категории',
+        callback_data=Cat(action='open', category_id=lot.category_id or 0),
+    )
     kb.adjust(1)
     return kb.as_markup()
 

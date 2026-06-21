@@ -24,5 +24,9 @@ class SteamModuleError(Exception):
     """Ошибка взаимодействия со Steam (логин, код, смена пароля)."""
 
 
+class ProviderNotReadyError(Exception):
+    """Провайдер аренды ещё не реализован (логика выдачи/деавторизации не подключена)."""
+
+
 class ProcessingError(Exception):
     """Прочая ошибка обработки."""

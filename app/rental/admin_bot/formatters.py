@@ -2,9 +2,17 @@ import html
 import math
 from datetime import UTC, datetime
 
-from app.rental.common.enums import AccountStatusEnum
+from app.rental.common.enums import AccountStatusEnum, FulfillmentEnum, ProviderEnum
+from app.rental.models.category import Category
 from app.rental.models.lot import Lot
-from app.rental.services.admin import AccountView, Dashboard, LotStock, RentalView, Stats
+from app.rental.services.admin import (
+    AccountView,
+    CategoryBrowse,
+    Dashboard,
+    LotStock,
+    RentalView,
+    Stats,
+)
 from app.rental.steam.interface import SteamSessionInfo
 
 
@@ -37,6 +45,49 @@ def lot_mark(ls: LotStock) -> str:
     if ls.rented > 0:
         return '🔵'
     return '🔴'
+
+
+def lot_button_label(ls: LotStock) -> str:
+    """Подпись кнопки лота в списке (категория/плоский список)."""
+    mark = lot_mark(ls)
+    if ls.lot.is_extension:
+        return f'{mark} ⏱ {ls.lot.title} (продление)'
+    if ls.lot.is_autodelivery:
+        return f'{mark} {ls.lot.title} (автовыдача)'
+    return f'{mark} {ls.lot.title} ({ls.free}/{ls.total})'
+
+
+_FULFILLMENT_ICON = {
+    FulfillmentEnum.RENTAL: '🎮',
+    FulfillmentEnum.AUTODELIVERY: '🟡',
+    FulfillmentEnum.OTHER: '🧩',
+}
+_PROVIDER_LABEL = {ProviderEnum.STEAM: 'Steam', ProviderEnum.X: 'X'}
+
+
+def category_button_label(category: Category) -> str:
+    """Подпись кнопки категории. Иконка по своему типу выдачи (если задан явно)."""
+    icon = _FULFILLMENT_ICON.get(category.fulfillment, '📁') if category.fulfillment else '📁'
+    suffix = '' if category.active else ' ⚪️'
+    return f'{icon} {category.title}{suffix}'
+
+
+def fmt_category(browse: CategoryBrowse) -> str:
+    """Заголовок экрана навигации по категории."""
+    node = browse.node
+    if node is None:
+        return '🗂 <b>Каталог</b>\nВыбери раздел:'
+    lines = [f'🗂 <b>{html.escape(node.title)}</b>']
+    meta: list[str] = []
+    if browse.fulfillment:
+        meta.append(f'тип: {browse.fulfillment.value}')
+    if browse.provider:
+        meta.append(f'провайдер: {_PROVIDER_LABEL.get(browse.provider, browse.provider.value)}')
+    if meta:
+        lines.append(' · '.join(meta))
+    if not browse.children and not browse.lots:
+        lines.append('\nПусто. Добавь подкатегорию или лот.')
+    return '\n'.join(lines)
 
 
 def fmt_sessions(sessions: list[SteamSessionInfo]) -> str:

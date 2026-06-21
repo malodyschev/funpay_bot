@@ -8,12 +8,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.rental.common.enums import (
     AccountStatusEnum,
     ExtensionReasonEnum,
+    FulfillmentEnum,
+    ProviderEnum,
     RentalStatusEnum,
 )
 from app.rental.models.account import Account
+from app.rental.models.category import Category
 from app.rental.models.lot import Lot
 from app.rental.models.rental import Rental
 from app.rental.repositories.account import AccountRepository
+from app.rental.repositories.category import CategoryRepository
 from app.rental.repositories.lot import LotRepository
 from app.rental.repositories.rental import RentalRepository
 from app.rental.services.base import get_repository
@@ -44,6 +48,21 @@ class LotStock:
     free: int
     total: int
     rented: int = 0
+
+
+@dataclass
+class CategoryBrowse:
+    """Экран навигации по дереву категорий: узел + дети + лоты под ним.
+
+    node=None — корень (Аренда / Автовыдача / Прочее). fulfillment/provider —
+    резолв с наследованием от предков (драйвер логики и подсказка для кнопок).
+    """
+
+    node: Category | None
+    children: list[Category]
+    lots: list['LotStock']
+    fulfillment: FulfillmentEnum | None
+    provider: ProviderEnum | None
 
 
 @dataclass
@@ -94,8 +113,36 @@ class AdminService:
     account_repo: ClassVar[AccountRepository] = get_repository(AccountRepository)
     rental_repo: ClassVar[RentalRepository] = get_repository(RentalRepository)
     lot_repo: ClassVar[LotRepository] = get_repository(LotRepository)
+    category_repo: ClassVar[CategoryRepository] = get_repository(CategoryRepository)
 
     # ---------- чтение ----------
+
+    async def browse(self, category_id: int | None) -> CategoryBrowse:
+        """Содержимое узла дерева категорий: подкатегории + лоты с остатком."""
+        node = await self.category_repo.get_or_none(id_=category_id) if category_id else None
+        children = list(await self.category_repo.get_children(category_id))
+        lots: list[LotStock] = []
+        if category_id is not None:
+            for lot in await self.lot_repo.list_by_category(category_id):
+                lots.append(await self._lot_stock(lot))
+        fulfillment, provider = await self.category_repo.resolve(category_id)
+        return CategoryBrowse(
+            node=node,
+            children=children,
+            lots=lots,
+            fulfillment=fulfillment,
+            provider=provider,
+        )
+
+    async def _lot_stock(self, lot: Lot) -> LotStock:
+        accounts = await self.account_repo.list_by_lot(lot.id)
+        free = sum(1 for a in accounts if a.status == AccountStatusEnum.FREE)
+        rented = sum(1 for a in accounts if a.status == AccountStatusEnum.RENTED)
+        return LotStock(lot=lot, free=free, total=len(accounts), rented=rented)
+
+    async def create_category(self, parent_id: int | None, title: str) -> Category:
+        """Создать подкатегорию (provider/fulfillment наследуются от родителя)."""
+        return await self.category_repo.create({'title': title, 'parent_id': parent_id})
 
     async def dashboard(self) -> Dashboard:
         """Счётчики по статусам аккаунтов + число активных аренд."""
@@ -117,16 +164,12 @@ class AdminService:
         )
 
     async def lots_with_stock(self) -> list[LotStock]:
-        """Все лоты с остатком свободных аккаунтов."""
-        lots = await self.lot_repo.get_all()
+        """Все лоты с остатком свободных аккаунтов (для дашборда)."""
         out: list[LotStock] = []
-        for lot in lots:
+        for lot in await self.lot_repo.get_all():
             if lot.removed:
                 continue  # удалён на FunPay — в админке не показываем
-            accounts = await self.account_repo.list_by_lot(lot.id)
-            free = sum(1 for a in accounts if a.status == AccountStatusEnum.FREE)
-            rented = sum(1 for a in accounts if a.status == AccountStatusEnum.RENTED)
-            out.append(LotStock(lot=lot, free=free, total=len(accounts), rented=rented))
+            out.append(await self._lot_stock(lot))
         return out
 
     async def get_lot(self, lot_id: int) -> Lot | None:
@@ -315,10 +358,12 @@ class AdminService:
         game: str | None = None,
         price: float | None = None,
         is_extension: bool = False,
+        category_id: int | None = None,
     ) -> Lot:
         """Создать новый лот аренды (или лот-продление, если is_extension)."""
         return await self.lot_repo.create({
             'title': title,
+            'category_id': category_id,
             'game': game,
             'duration_minutes': duration_minutes,
             'price': price,

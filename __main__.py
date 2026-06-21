@@ -49,6 +49,7 @@ _SCHEMA_PATCHES = (
     'ALTER TABLE lots ADD COLUMN IF NOT EXISTS is_autodelivery BOOLEAN NOT NULL DEFAULT FALSE',
     'ALTER TABLE lots ADD COLUMN IF NOT EXISTS removed BOOLEAN NOT NULL DEFAULT FALSE',
     'ALTER TABLE lots ADD COLUMN IF NOT EXISTS funpay_lot_id INTEGER',
+    'ALTER TABLE lots ADD COLUMN IF NOT EXISTS category_id INTEGER',
     'ALTER TABLE extensions ADD COLUMN IF NOT EXISTS funpay_order_id TEXT',
     # Название лота больше не уникально (несколько офферов с одним именем).
     'ALTER TABLE lots DROP CONSTRAINT IF EXISTS lots_title_key',
@@ -66,10 +67,39 @@ def sync_schema():
             await conn.run_sync(Base.metadata.create_all)
             for stmt in _SCHEMA_PATCHES:
                 await conn.execute(sa.text(stmt))
+        await _seed_categories()
         await async_engine.dispose()
 
     asyncio.run(_sync())
-    logger.info('schema synced (tables + missing columns)')
+    logger.info('schema synced (tables + missing columns + base categories)')
+
+
+async def _seed_categories() -> None:
+    """Идемпотентно создать базовое дерево категорий, если их ещё нет (dev).
+
+    Только скелет (Аренда → Steam/X, Автовыдача, Прочее); существующие лоты НЕ
+    переразвешиваются — это делает alembic-миграция в проде. Лоты без категории
+    трактуются как Steam-аренда (обратная совместимость).
+    """
+    from app.rental.common.enums import FulfillmentEnum, ProviderEnum
+    from app.rental.models.category import Category
+
+    async with get_session() as session:
+        if await session.scalar(sa.select(sa.func.count(Category.id))):
+            return  # уже засеяно
+        rental = Category(title='Аренда', fulfillment=FulfillmentEnum.RENTAL, sort=0)
+        autodelivery = Category(
+            title='Автовыдача', fulfillment=FulfillmentEnum.AUTODELIVERY, sort=1,
+        )
+        other = Category(title='Прочее', fulfillment=FulfillmentEnum.OTHER, sort=2)
+        session.add_all([rental, autodelivery, other])
+        await session.flush()
+        session.add_all([
+            Category(title='Steam', parent_id=rental.id, provider=ProviderEnum.STEAM, sort=0),
+            Category(title='X', parent_id=rental.id, provider=ProviderEnum.X, sort=1),
+        ])
+        await session.commit()
+    logger.info('base categories seeded')
 
 
 @cli.command('reset-templates')

@@ -10,7 +10,7 @@ from aiogram.types import CallbackQuery, Message
 
 from app.database import get_session
 from app.rental.admin_bot import formatters as fmt, keyboards as kb
-from app.rental.admin_bot.callbacks import AddAccount, LotAct, Menu
+from app.rental.admin_bot.callbacks import AddAccount, Cat, LotAct, Menu
 from app.rental.common.commands import DEFAULT_DELIVERY_TEMPLATE
 from app.rental.common.exceptions import DuplicateException, SteamModuleError
 from app.rental.funpay.lot_sync import sync_lots
@@ -41,6 +41,47 @@ class AccountForm(StatesGroup):
 
 class LotEditForm(StatesGroup):
     duration = State()
+
+
+class CategoryForm(StatesGroup):
+    title = State()
+
+
+# ---------- категории ----------
+
+@router.callback_query(Cat.filter(F.action == 'add'))
+async def category_add_start(cb: CallbackQuery, callback_data: Cat, state: FSMContext) -> None:
+    await state.set_state(CategoryForm.title)
+    await state.update_data(parent_id=callback_data.category_id or None)
+    await cb.message.answer('🗂 Название новой подкатегории:')
+    await cb.answer()
+
+
+@router.message(CategoryForm.title)
+async def category_add_set(message: Message, state: FSMContext) -> None:
+    title = (message.text or '').strip()
+    if not title:
+        await message.answer('Название не может быть пустым. Ещё раз:')
+        return
+    data = await state.get_data()
+    await state.clear()
+    parent_id = data.get('parent_id')
+    async with get_session() as session:
+        svc = AdminService(session, runtime.get_deps())
+        await svc.create_category(parent_id, title)
+        browse = await svc.browse(parent_id)
+    await message.answer(
+        f'✅ Категория «{title}» создана.',
+        reply_markup=kb.category_menu(browse),
+    )
+
+
+@router.callback_query(Cat.filter(F.action == 'add_lot'))
+async def category_add_lot(cb: CallbackQuery, callback_data: Cat, state: FSMContext) -> None:
+    """Создать лот внутри этой категории — запоминаем категорию и спрашиваем тип."""
+    await state.update_data(category_id=callback_data.category_id or None)
+    await cb.message.answer('➕ <b>Новый лот.</b> Выбери тип:', reply_markup=kb.lot_kind())
+    await cb.answer()
 
 
 # ---------- синхронизация и конфиг лота ----------
@@ -146,12 +187,8 @@ async def lot_duration_set(message: Message, state: FSMContext) -> None:
 
 
 # ---------- новый лот ----------
-
-@router.callback_query(Menu.filter(F.action == 'add_lot'))
-async def lot_start(cb: CallbackQuery) -> None:
-    await cb.message.answer('➕ <b>Новый лот.</b> Выбери тип:', reply_markup=kb.lot_kind())
-    await cb.answer()
-
+# Точка входа — Cat(action='add_lot') из экрана категории (см. category_add_lot):
+# она кладёт category_id в FSM и показывает lot_kind(); дальше — выбор типа.
 
 @router.callback_query(Menu.filter(F.action == 'add_lot_rental'))
 async def lot_start_rental(cb: CallbackQuery, state: FSMContext) -> None:
@@ -227,9 +264,10 @@ async def lot_template(message: Message, state: FSMContext) -> None:
 
 
 async def _finish_lot(message: Message, state: FSMContext, template: str) -> None:
-    """Создать лот из накопленных в FSM данных и показать список лотов."""
+    """Создать лот из накопленных в FSM данных и вернуться в его категорию."""
     data = await state.get_data()
     await state.clear()
+    category_id = data.get('category_id')
     async with get_session() as session:
         svc = AdminService(session, runtime.get_deps())
         lot = await svc.create_lot(
@@ -239,12 +277,13 @@ async def _finish_lot(message: Message, state: FSMContext, template: str) -> Non
             price=data.get('price'),
             template=template,
             is_extension=data.get('is_extension', False),
+            category_id=category_id,
         )
-        lots = await svc.lots_with_stock()
+        browse = await svc.browse(category_id)
     kind = 'продление' if lot.is_extension else 'аренда'
     await message.answer(
         f'✅ Лот #{lot.id} «{lot.title}» ({kind}, {lot.duration_minutes} мин.) создан.',
-        reply_markup=kb.lots_menu(lots),
+        reply_markup=kb.category_menu(browse),
     )
 
 

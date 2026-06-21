@@ -6,10 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.rental.common.exceptions import SteamModuleError
 from app.rental.funpay.events import NewMessageEvent
+from app.rental.providers.registry import get_provider
 from app.rental.repositories.account import AccountRepository
+from app.rental.repositories.category import CategoryRepository
+from app.rental.repositories.lot import LotRepository
 from app.rental.repositories.rental import RentalRepository
 from app.rental.services.base import get_repository
-from app.rental.services.credentials import build_credentials
 from app.runtime import RentalDeps
 
 
@@ -24,6 +26,8 @@ class GuardCodeService:
     deps: RentalDeps
     rental_repo: ClassVar[RentalRepository] = get_repository(RentalRepository)
     account_repo: ClassVar[AccountRepository] = get_repository(AccountRepository)
+    lot_repo: ClassVar[LotRepository] = get_repository(LotRepository)
+    category_repo: ClassVar[CategoryRepository] = get_repository(CategoryRepository)
 
     async def handle(self, event: NewMessageEvent) -> None:
         """Send the current Guard code to the active renter of this chat."""
@@ -38,8 +42,11 @@ class GuardCodeService:
             return
 
         account = await self.account_repo.get(rental.account_id)
+        lot = await self.lot_repo.get_or_none(id_=account.lot_id)
+        _, provider_enum = await self.category_repo.resolve(lot.category_id if lot else None)
+        provider = get_provider(provider_enum, self.deps)
         try:
-            code = await self.deps.steam.generate_code(build_credentials(account))
+            code = await provider.generate_code(account)
         except SteamModuleError:
             logger.exception('failed to generate guard code for account %s', account.id)
             await self.deps.funpay.send_message(
