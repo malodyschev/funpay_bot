@@ -10,7 +10,7 @@ _NOT_READY = (
 )
 
 
-class XProvider(RentalProvider):
+class ChatProvider(RentalProvider):
     """Заглушка под личное приложение X.
 
     Каркас уже есть (категория с provider=x), но логика выдачи — код с почты и

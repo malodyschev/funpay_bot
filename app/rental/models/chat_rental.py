@@ -3,36 +3,37 @@ from datetime import datetime
 import sqlalchemy as sa
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.rental.common.enums import XRentalStatusEnum
+from app.rental.common.enums import ChatRentalStatusEnum
 from app.rental.models.base_model import Base
 from app.rental.models.type_decorators import EnumAsString
 
 
-class XRental(Base):
-    """Аренда X: один арендатор занимает один слот на одном X-аккаунте.
+class ChatRental(Base):
+    """Аренда Chat: один арендатор занимает один слот на одном Chat-аккаунте.
 
-    На одном аккаунте до `slots` активных аренд. `x_account_id` изменяемый —
+    На одном аккаунте до `slots` активных аренд. `chat_account_id` изменяемый —
     при замене слетевшего аккаунта аренды переносятся на новый (см.
-    XRentalService.replace_account). funpay_order_id уникален (идемпотентность).
+    ChatRentalService.replace_account). funpay_order_id уникален (идемпотентность).
     """
 
-    __tablename__ = 'x_rentals'
+    __tablename__ = 'chat_rentals'
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    x_account_id: Mapped[int] = mapped_column(sa.ForeignKey('x_accounts.id'), index=True)
+    chat_account_id: Mapped[int] = mapped_column(sa.ForeignKey('chat_accounts.id'), index=True)
     lot_id: Mapped[int | None] = mapped_column(sa.ForeignKey('lots.id'))
     buyer_id: Mapped[int] = mapped_column(sa.BigInteger, index=True)
     buyer_username: Mapped[str | None] = mapped_column(sa.Text)
     chat_id: Mapped[int | None] = mapped_column(sa.BigInteger)
     funpay_order_id: Mapped[str] = mapped_column(sa.Text, unique=True)
     started_at: Mapped[datetime] = mapped_column(sa.DateTime, default=datetime.now)
-    # Когда впервые запросили !x-code (= ~момент логина). Якорь для ручного
-    # матчинга в session manager X + старт отсчёта срока. NULL — ещё не входил.
+    # Когда впервые запросили !chat-code (= ~момент логина). Якорь для ручного
+    # матчинга в session manager Chat. NULL — ещё не входил.
     code_requested_at: Mapped[datetime | None] = mapped_column(sa.DateTime)
     expires_at: Mapped[datetime] = mapped_column(sa.DateTime, index=True)
-    status: Mapped[XRentalStatusEnum] = mapped_column(
-        EnumAsString(XRentalStatusEnum),
-        default=XRentalStatusEnum.ACTIVE,
+    warned: Mapped[bool] = mapped_column(sa.Boolean, default=False)  # послали алерт «скоро конец»
+    status: Mapped[ChatRentalStatusEnum] = mapped_column(
+        EnumAsString(ChatRentalStatusEnum),
+        default=ChatRentalStatusEnum.ACTIVE,
     )
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(

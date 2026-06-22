@@ -18,28 +18,28 @@ class Cat(CallbackData, prefix='cat'):
     category_id: int
 
 
-class XAddAccount(CallbackData, prefix='xaddacc'):
-    """Начать добавление X-аккаунта (логин+пароль+JWT) в лот."""
+class ChatAddAccount(CallbackData, prefix='chataddacc'):
+    """Начать добавление Chat-аккаунта (логин+пароль+JWT) в лот."""
 
     lot_id: int
 
 
-class XAcc(CallbackData, prefix='xacc'):
-    """Действие над X-аккаунтом: action=open|creds|code|edit|replace|delete|delete_yes."""
+class ChatAcc(CallbackData, prefix='chatacc'):
+    """Действие над Chat-аккаунтом: action=open|creds|code|edit|replace|delete|delete_yes."""
 
     action: str
-    x_account_id: int
+    chat_account_id: int
 
 
-class XReplace(CallbackData, prefix='xrepl'):
-    """Заменить X-аккаунт old_id на new_id (перенос аренд)."""
+class ChatReplace(CallbackData, prefix='chatrepl'):
+    """Заменить Chat-аккаунт old_id на new_id (перенос аренд)."""
 
     old_id: int
     new_id: int
 
 
-class XKick(CallbackData, prefix='xkick'):
-    """Подтвердить ручной кик истёкшей X-аренды (закрыть)."""
+class ChatKick(CallbackData, prefix='chatkick'):
+    """Подтвердить ручной кик истёкшей Chat-аренды (закрыть)."""
 
     rental_id: int
 

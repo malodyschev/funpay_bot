@@ -12,7 +12,7 @@ class Rental(Base):
     """Аренда аккаунта (активная или историческая)."""
 
     __tablename__ = 'rentals'
-    __table_args__ = (sa.Index('ix_rentals_status_expires_at', 'status', 'expires_at'),)
+    __table_args__ = (sa.Index('ichat_rentals_status_expires_at', 'status', 'expires_at'),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     account_id: Mapped[int] = mapped_column(sa.ForeignKey('accounts.id'))

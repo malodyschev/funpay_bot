@@ -24,5 +24,6 @@ RUN pip install -r requirements.txt
 
 COPY . .
 
-# На старте: накатить миграции (идемпотентно) и запустить бота.
-CMD ["sh", "-c", "alembic upgrade head && python __main__.py run"]
+# На старте: накатить alembic-миграции + sync-schema (создаёт недостающие
+# таблицы/колонки и сеет дерево категорий, идемпотентно), затем запустить бота.
+CMD ["sh", "-c", "alembic upgrade head && python __main__.py sync-schema && python __main__.py run"]

@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 
 from app.rental.common.enums import AccountStatusEnum, FulfillmentEnum, ProviderEnum
 from app.rental.models.category import Category
+from app.rental.models.chat_account import ChatAccount
 from app.rental.models.lot import Lot
-from app.rental.models.x_account import XAccount
 from app.rental.services.admin import (
     AccountView,
     CategoryBrowse,
@@ -63,7 +63,7 @@ _FULFILLMENT_ICON = {
     FulfillmentEnum.AUTODELIVERY: '🟡',
     FulfillmentEnum.OTHER: '🧩',
 }
-_PROVIDER_LABEL = {ProviderEnum.STEAM: 'Steam', ProviderEnum.X: 'X'}
+_PROVIDER_LABEL = {ProviderEnum.STEAM: 'Steam', ProviderEnum.CHAT: 'Chat'}
 
 
 def category_button_label(category: Category) -> str:
@@ -73,32 +73,32 @@ def category_button_label(category: Category) -> str:
     return f'{icon} {category.title}{suffix}'
 
 
-def x_account_button_label(account: XAccount) -> str:
-    """Подпись кнопки X-аккаунта в списке лота."""
+def chat_account_button_label(account: ChatAccount) -> str:
+    """Подпись кнопки Chat-аккаунта в списке лота."""
     code = '🔑' if account.totp_secret_enc else '⚠️ без 2FA'
     return f'🟣 {account.login} · slots {account.slots} · {code}'
 
 
-def fmt_lot_x(lot: Lot, accounts: list[XAccount]) -> str:
-    """Шапка X-лота (шаренная аренда)."""
+def fmt_lot_chat(lot: Lot, accounts: list[ChatAccount]) -> str:
+    """Шапка Chat-лота (шаренная аренда)."""
     status = '🟢 активен' if lot.active else '⚪️ выключен'
     dur = f'{lot.duration_minutes} мин.' + ('' if lot.duration_minutes else ' ⚠️ не задана')
     total_slots = sum(a.slots for a in accounts)
     lines = [
         f'🟣 <b>{html.escape(lot.title)}</b>',
-        f'X · шаренная аренда · {status}',
+        f'Chat · шаренная аренда · {status}',
         f'Длительность: {dur}',
-        f'X-аккаунтов в пуле: {len(accounts)} (всего мест: {total_slots})',
+        f'Chat-аккаунтов в пуле: {len(accounts)} (всего мест: {total_slots})',
     ]
     if not lot.active:
         lines.append('\n⚠️ Лот выключен — заказы по нему не обрабатываются.')
     return '\n'.join(lines)
 
 
-def fmt_x_account_card(account: XAccount) -> str:
-    """Карточка X-аккаунта."""
+def fmt_chat_account_card(account: ChatAccount) -> str:
+    """Карточка Chat-аккаунта."""
     return '\n'.join([
-        f'🟣 <b>X-аккаунт #{account.id}</b> — {html.escape(account.login)}',
+        f'🟣 <b>Chat-аккаунт #{account.id}</b> — {html.escape(account.login)}',
         f'Вместимость (slots): {account.slots}',
         f'2FA-ключ: {"есть ✅" if account.totp_secret_enc else "нет ⚠️"}',
     ])

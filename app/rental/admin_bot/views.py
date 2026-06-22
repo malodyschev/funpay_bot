@@ -8,10 +8,10 @@ from app.rental.services.admin import AdminService
 
 
 async def lot_screen(svc: AdminService, lot: Lot) -> tuple[str, InlineKeyboardMarkup]:
-    """Экран лота — провайдер-aware: X-лот показывает X-аккаунты, Steam — Steam."""
+    """Экран лота — провайдер-aware: Chat-лот показывает Chat-аккаунты, Steam — Steam."""
     provider = await svc.lot_provider(lot)
-    if provider == ProviderEnum.X:
-        accounts = await svc.x_accounts_of_category(lot.category_id) if lot.category_id else []
-        return fmt.fmt_lot_x(lot, accounts), kb.x_lot_accounts(lot, accounts)
+    if provider == ProviderEnum.CHAT:
+        accounts = await svc.chat_accounts_of_category(lot.category_id) if lot.category_id else []
+        return fmt.fmt_lot_chat(lot, accounts), kb.chat_lot_accounts(lot, accounts)
     views = await svc.accounts_of_lot(lot.id)
     return fmt.fmt_lot(lot, len(views)), kb.lot_accounts(views, lot)

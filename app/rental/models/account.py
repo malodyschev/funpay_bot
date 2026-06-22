@@ -12,7 +12,7 @@ class Account(Base):
     """Steam-аккаунт в пуле."""
 
     __tablename__ = 'accounts'
-    __table_args__ = (sa.Index('ix_accounts_lot_id_status', 'lot_id', 'status'),)
+    __table_args__ = (sa.Index('ichat_accounts_lot_id_status', 'lot_id', 'status'),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     lot_id: Mapped[int] = mapped_column(sa.ForeignKey('lots.id'))

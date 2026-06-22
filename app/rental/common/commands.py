@@ -3,7 +3,10 @@
 # только основную форму, чтобы никто не путался.
 ACC_COMMANDS = frozenset({'!acc', '!акк', '!аккаунт', '!креды', '/acc'})
 CODE_COMMANDS = frozenset({'!code', '!код', '/code'})
-X_CODE_COMMANDS = frozenset({'!x-code', '!xcode', '!x_code', '!х-код', '/xcode'})
+CHAT_CODE_COMMANDS = frozenset({'!chat-code', '!chatcode', '!chat_code', '!чат-код', '/chatcode'})
+CHAT_TIME_COMMANDS = frozenset({'!chat-time', '!chattime', '/chattime'})
+CHAT_ACC_COMMANDS = frozenset({'!chat-acc', '!chatacc', '!chat-креды', '/chatacc'})
+CHAT_REFUND_COMMANDS = frozenset({'!chat-refund', '!chatrefund', '!chat-возврат', '/chatrefund'})
 STOCK_COMMANDS = frozenset({'!free', '!фри', '!наличие', '!stock', '/free'})
 STOCK_ALL_COMMANDS = frozenset(
     {'!free-all', '!freeall', '!free_all', '!фри-все', '!всё', '!все', '/freeall'},
@@ -72,4 +75,25 @@ DEFAULT_DELIVERY_TEMPLATE = (
     '👨‍💻 !admin — позвать администратора\n'
     '\n'
     '🎁 Оставьте отзыв 5★ — добавим час аренды в подарок!'
+)
+
+# Сообщение выдачи для X (отдельное от Steam): код входа — TOTP по !chat-code.
+CHAT_DELIVERY_TEMPLATE = (
+    '✅ Оплата получена!\n'
+    '\n'
+    '🔐 Данные для входа\n'
+    '👤 Логин: {login}\n'
+    '🔑 Пароль: {password}\n'
+    '\n'
+    '⏳ Времени аренды: {minutes} мин. Отсчёт идёт с момента оплаты.\n'
+    '\n'
+    '📋 Команды в этом чате\n'
+    '🔑 !chat-code — получить 2fa код\n'
+    '⏳ !time — сколько осталось времени\n'
+    '↩️ !refund — запросить возврат\n'
+    '👨‍💻 !admin — позвать администратора\n'
+    '\n'
+    '🎁 Оставьте отзыв 5★ — добавим 1 день аренды в подарок!\n'
+    '\n'
+    '🔑 Код входа (2FA): отправьте !chat-code'
 )

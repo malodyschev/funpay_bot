@@ -55,23 +55,16 @@ _SCHEMA_PATCHES = (
     # Название лота больше не уникально (несколько офферов с одним именем).
     'ALTER TABLE lots DROP CONSTRAINT IF EXISTS lots_title_key',
     'CREATE INDEX IF NOT EXISTS ix_lots_title ON lots (title)',
-    # X переехал на TOTP + ручную деавторизацию: sessions-API убрали, схему чистим.
+    # Провайдер X переименован в Chat (финальное имя). Старых таблиц x_* больше
+    # нет в моделях → create_all их не трогает; дропаем явно (тестовые Chat-данные
+    # теряются — пересоздай аккаунты). chat_accounts/chat_rentals создаёт create_all.
     'DROP TABLE IF EXISTS x_sessions',
-    'ALTER TABLE x_accounts ADD COLUMN IF NOT EXISTS totp_secret_enc BYTEA',
-    # Пул привязан к категории (не к лоту) + флаг вывода из пула.
-    'ALTER TABLE x_accounts ADD COLUMN IF NOT EXISTS category_id INTEGER',
-    'ALTER TABLE x_accounts ADD COLUMN IF NOT EXISTS removed BOOLEAN NOT NULL DEFAULT FALSE',
-    'ALTER TABLE x_accounts DROP COLUMN IF EXISTS lot_id',
-    'ALTER TABLE x_accounts DROP COLUMN IF EXISTS base_url',
-    'ALTER TABLE x_accounts DROP COLUMN IF EXISTS access_token_enc',
-    'ALTER TABLE x_accounts DROP COLUMN IF EXISTS refresh_token_enc',
-    'ALTER TABLE x_accounts DROP COLUMN IF EXISTS token_expires_at',
-    'ALTER TABLE x_accounts DROP COLUMN IF EXISTS ttl_minutes',
-    'ALTER TABLE x_accounts DROP COLUMN IF EXISTS proxy',
-    'ALTER TABLE x_accounts DROP COLUMN IF EXISTS user_agent',
-    'ALTER TABLE x_accounts DROP COLUMN IF EXISTS cookie_enc',
-    # Срок X стартует с первого !x-code (логина); фиксируем его время.
-    'ALTER TABLE x_rentals ADD COLUMN IF NOT EXISTS code_requested_at TIMESTAMP',
+    'DROP TABLE IF EXISTS x_rentals',
+    'DROP TABLE IF EXISTS x_accounts',
+    "UPDATE categories SET provider = 'chat' WHERE provider = 'x'",
+    "UPDATE categories SET title = 'Chat' WHERE title = 'X'",
+    # Предупреждение за ~час до конца Chat-аренды.
+    'ALTER TABLE chat_rentals ADD COLUMN IF NOT EXISTS warned BOOLEAN NOT NULL DEFAULT FALSE',
 )
 
 
@@ -223,6 +216,7 @@ async def _run() -> None:
     from app.rental.admin_bot.bot import build_admin_bot
     from app.rental.admin_bot.telegram_notifier import TelegramNotifier
     from app.rental.backup import run_backup_scheduler
+    from app.rental.chat_poller import run_chat_expiry
     from app.rental.funpay.listener import run_funpay_listener
     from app.rental.funpay.lot_sync import sync_lots
     from app.rental.funpay.real import RealFunPayConnector, build_account
@@ -230,7 +224,6 @@ async def _run() -> None:
     from app.rental.poller import run_poller
     from app.rental.raiser import run_raiser
     from app.rental.steam.real import RealSteamModule
-    from app.rental.x_poller import run_x_expiry
     from app.runtime import RentalDeps, runtime
 
     settings = get_settings()
@@ -286,7 +279,7 @@ async def _run() -> None:
         asyncio.create_task(run_funpay_health()),
         asyncio.create_task(run_account_check()),
         asyncio.create_task(run_backup_scheduler(bot, admin_ids)),
-        asyncio.create_task(run_x_expiry(bot, admin_ids)),
+        asyncio.create_task(run_chat_expiry(bot, admin_ids)),
     ]
     logger.info('admin bot started (funpay=real)')
     try:

@@ -6,8 +6,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.rental.models.base_model import Base
 
 
-class XAccount(Base):
-    """Шаренный X-аккаунт: его арендуют несколько человек одновременно.
+class ChatAccount(Base):
+    """Шаренный Chat-аккаунт: его арендуют несколько человек одновременно.
 
     Привязан к КАТЕГОРИИ (пул): все лоты этой категории берут аккаунты отсюда.
     Вместимость — `slots` (балансировка least-loaded). Код входа — TOTP из
@@ -15,7 +15,7 @@ class XAccount(Base):
     (слетел/заменён), записи аренд храним ради истории.
     """
 
-    __tablename__ = 'x_accounts'
+    __tablename__ = 'chat_accounts'
 
     id: Mapped[int] = mapped_column(primary_key=True)
     category_id: Mapped[int | None] = mapped_column(

@@ -3,7 +3,9 @@ from logging import getLogger
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.rental.common.enums import ProviderEnum
 from app.rental.repositories.account import AccountRepository
+from app.rental.repositories.category import CategoryRepository
 from app.rental.repositories.lot import LotRepository
 from app.runtime import RentalDeps
 
@@ -26,10 +28,15 @@ async def sync_lot_visibility(session: AsyncSession, deps: RentalDeps, lot_id: i
     if lot.funpay_lot_id is None:
         logger.warning('lot %s ("%s") без funpay_lot_id — видимость не меняем', lot_id, lot.title)
         return
-    free = await AccountRepository(session).count_free(lot_id)
-    # Виден на FunPay = лот включён у нас И есть свободные аккаунты.
-    # Выключенный (или распроданный) лот скрываем.
-    want_active = lot.active and free > 0
+    _, provider = await CategoryRepository(session).resolve(lot.category_id)
+    if provider == ProviderEnum.CHAT:
+        # Chat-лот: ёмкость пулится по категории (не по Steam-стоку), поэтому
+        # видимость = просто вкл/выкл лота. Иначе он всегда «распродан» (free=0).
+        want_active = lot.active
+    else:
+        free = await AccountRepository(session).count_free(lot_id)
+        # Виден на FunPay = лот включён у нас И есть свободные аккаунты.
+        want_active = lot.active and free > 0
     try:
         await deps.funpay.set_lot_active(lot.funpay_lot_id, want_active)
     except Exception as exc:

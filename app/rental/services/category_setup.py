@@ -89,6 +89,6 @@ async def _create_skeleton(session: AsyncSession) -> None:
     await session.flush()
     session.add_all([
         Category(title='Steam', parent_id=rental.id, provider=ProviderEnum.STEAM, sort=0),
-        Category(title='X', parent_id=rental.id, provider=ProviderEnum.X, sort=1),
+        Category(title='Chat', parent_id=rental.id, provider=ProviderEnum.CHAT, sort=1),
     ])
     await session.flush()

@@ -20,7 +20,7 @@ class RentalProvider(ABC):
 
     @abstractmethod
     async def generate_code(self, account: Account) -> str:
-        """Текущий код доступа арендатору (Steam Guard / код с почты у X)."""
+        """Текущий код доступа арендатору (Steam Guard / код с почты у Chat)."""
 
     @abstractmethod
     async def deauthorize(self, account: Account) -> int:

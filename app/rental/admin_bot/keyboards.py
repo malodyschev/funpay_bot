@@ -6,6 +6,10 @@ from app.rental.admin_bot.callbacks import (
     AddAccount,
     BindAccount,
     Cat,
+    ChatAcc,
+    ChatAddAccount,
+    ChatKick,
+    ChatReplace,
     Extend,
     LotAct,
     LotOpen,
@@ -13,21 +17,17 @@ from app.rental.admin_bot.callbacks import (
     MoveTo,
     Refund,
     SetCat,
-    XAcc,
-    XAddAccount,
-    XKick,
-    XReplace,
 )
 from app.rental.admin_bot.formatters import (
     account_button_label,
     category_button_label,
+    chat_account_button_label,
     lot_button_label,
     rental_button_label,
-    x_account_button_label,
 )
 from app.rental.common.enums import AccountStatusEnum
+from app.rental.models.chat_account import ChatAccount
 from app.rental.models.lot import Lot
-from app.rental.models.x_account import XAccount
 from app.rental.services.admin import AccountView, CategoryBrowse, LotStock, RentalView
 
 
@@ -125,13 +125,13 @@ def category_picker(lot_id: int, paths: list[tuple]) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def x_lot_accounts(lot: Lot, accounts: list[XAccount]) -> InlineKeyboardMarkup:
-    """Экран X-лота: пул X-аккаунтов + добавление логин/пароль (без maFile/bind)."""
+def chat_lot_accounts(lot: Lot, accounts: list[ChatAccount]) -> InlineKeyboardMarkup:
+    """Экран Chat-лота: пул Chat-аккаунтов + добавление логин/пароль (без maFile/bind)."""
     kb = InlineKeyboardBuilder()
     for account in accounts:
         kb.button(
-            text=x_account_button_label(account),
-            callback_data=XAcc(action='open', x_account_id=account.id),
+            text=chat_account_button_label(account),
+            callback_data=ChatAcc(action='open', chat_account_id=account.id),
         )
     kb.button(
         text=f'⏱ Длительность ({lot.duration_minutes} мин)',
@@ -141,7 +141,10 @@ def x_lot_accounts(lot: Lot, accounts: list[XAccount]) -> InlineKeyboardMarkup:
         text='⚪️ Выключить лот' if lot.active else '🟢 Включить лот',
         callback_data=LotAct(action='toggle_active', lot_id=lot.id),
     )
-    kb.button(text='➕ Добавить X-аккаунт (логин+пароль)', callback_data=XAddAccount(lot_id=lot.id))
+    kb.button(
+        text='➕ Добавить Chat-аккаунт (логин+пароль)',
+        callback_data=ChatAddAccount(lot_id=lot.id),
+    )
     kb.button(text='📂 Категория', callback_data=LotAct(action='category', lot_id=lot.id))
     kb.button(
         text='⬅️ К категории',
@@ -151,14 +154,20 @@ def x_lot_accounts(lot: Lot, accounts: list[XAccount]) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def x_account_card(account: XAccount) -> InlineKeyboardMarkup:
-    """Карточка X-аккаунта: креды (почта/пароль/код), правка, замена, удаление."""
+def chat_account_card(account: ChatAccount) -> InlineKeyboardMarkup:
+    """Карточка Chat-аккаунта: креды (почта/пароль/код), правка, замена, удаление."""
     aid = account.id
     kb = InlineKeyboardBuilder()
-    kb.button(text='🔐 Получить креды', callback_data=XAcc(action='creds', x_account_id=aid))
-    kb.button(text='✏️ Обновить 2FA/пароль', callback_data=XAcc(action='edit', x_account_id=aid))
-    kb.button(text='🔄 Заменить аккаунт', callback_data=XAcc(action='replace', x_account_id=aid))
-    kb.button(text='🗑 Удалить аккаунт', callback_data=XAcc(action='delete', x_account_id=aid))
+    kb.button(text='🔐 Получить креды', callback_data=ChatAcc(action='creds', chat_account_id=aid))
+    kb.button(
+        text='✏️ Обновить 2FA/пароль',
+        callback_data=ChatAcc(action='edit', chat_account_id=aid),
+    )
+    kb.button(
+        text='🔄 Заменить аккаунт',
+        callback_data=ChatAcc(action='replace', chat_account_id=aid),
+    )
+    kb.button(text='🗑 Удалить аккаунт', callback_data=ChatAcc(action='delete', chat_account_id=aid))
     kb.button(
         text='⬅️ К категории',
         callback_data=Cat(action='open', category_id=account.category_id or 0),
@@ -167,23 +176,23 @@ def x_account_card(account: XAccount) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def x_replace_picker(old_id: int, candidates: list[XAccount]) -> InlineKeyboardMarkup:
+def chat_replace_picker(old_id: int, candidates: list[ChatAccount]) -> InlineKeyboardMarkup:
     """Выбор аккаунта, на который перенести аренды слетевшего."""
     kb = InlineKeyboardBuilder()
     for acc in candidates:
         kb.button(
             text=f'🟣 {acc.login} (slots {acc.slots})',
-            callback_data=XReplace(old_id=old_id, new_id=acc.id),
+            callback_data=ChatReplace(old_id=old_id, new_id=acc.id),
         )
-    kb.button(text='⬅️ Отмена', callback_data=XAcc(action='open', x_account_id=old_id))
+    kb.button(text='⬅️ Отмена', callback_data=ChatAcc(action='open', chat_account_id=old_id))
     kb.adjust(1)
     return kb.as_markup()
 
 
-def x_kick_button(rental_id: int) -> InlineKeyboardMarkup:
-    """Инлайн-кнопка под алертом об истечении X-аренды."""
+def chat_kick_button(rental_id: int) -> InlineKeyboardMarkup:
+    """Инлайн-кнопка под алертом об истечении Chat-аренды."""
     kb = InlineKeyboardBuilder()
-    kb.button(text='✅ Кикнул (закрыть)', callback_data=XKick(rental_id=rental_id))
+    kb.button(text='✅ Кикнул (закрыть)', callback_data=ChatKick(rental_id=rental_id))
     return kb.as_markup()
 
 
