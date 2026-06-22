@@ -81,3 +81,19 @@ class LotRepository(Repository[Lot]):
         """Все лоты, привязанные к офферу FunPay (для полной сверки 1-в-1)."""
         query = sa.select(Lot).where(Lot.funpay_lot_id.is_not(None))
         return await self.scalars(query)
+
+    async def list_uncategorized(self) -> Sequence[Lot]:
+        """Лоты без категории (синканные черновики) — «неразобранные»."""
+        query = (
+            sa.select(Lot)
+            .where(Lot.category_id.is_(None), Lot.removed.is_(False))
+            .order_by(Lot.title, Lot.id)
+        )
+        return await self.scalars(query)
+
+    async def count_uncategorized(self) -> int:
+        query = sa.select(sa.func.count(Lot.id)).where(
+            Lot.category_id.is_(None), Lot.removed.is_(False),
+        )
+        result = await self.execute(query)
+        return result.scalar() or 0

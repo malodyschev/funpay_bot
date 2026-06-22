@@ -15,6 +15,7 @@ from app.rental.common.enums import AccountTypeEnum
 from app.rental.models import Base
 from app.rental.repositories.lot import LotRepository
 from app.rental.services.account_loader import AccountLoaderService
+from app.rental.services.category_setup import seed_and_backfill
 
 
 logger = getLogger(__name__)
@@ -54,6 +55,23 @@ _SCHEMA_PATCHES = (
     # Название лота больше не уникально (несколько офферов с одним именем).
     'ALTER TABLE lots DROP CONSTRAINT IF EXISTS lots_title_key',
     'CREATE INDEX IF NOT EXISTS ix_lots_title ON lots (title)',
+    # X переехал на TOTP + ручную деавторизацию: sessions-API убрали, схему чистим.
+    'DROP TABLE IF EXISTS x_sessions',
+    'ALTER TABLE x_accounts ADD COLUMN IF NOT EXISTS totp_secret_enc BYTEA',
+    # Пул привязан к категории (не к лоту) + флаг вывода из пула.
+    'ALTER TABLE x_accounts ADD COLUMN IF NOT EXISTS category_id INTEGER',
+    'ALTER TABLE x_accounts ADD COLUMN IF NOT EXISTS removed BOOLEAN NOT NULL DEFAULT FALSE',
+    'ALTER TABLE x_accounts DROP COLUMN IF EXISTS lot_id',
+    'ALTER TABLE x_accounts DROP COLUMN IF EXISTS base_url',
+    'ALTER TABLE x_accounts DROP COLUMN IF EXISTS access_token_enc',
+    'ALTER TABLE x_accounts DROP COLUMN IF EXISTS refresh_token_enc',
+    'ALTER TABLE x_accounts DROP COLUMN IF EXISTS token_expires_at',
+    'ALTER TABLE x_accounts DROP COLUMN IF EXISTS ttl_minutes',
+    'ALTER TABLE x_accounts DROP COLUMN IF EXISTS proxy',
+    'ALTER TABLE x_accounts DROP COLUMN IF EXISTS user_agent',
+    'ALTER TABLE x_accounts DROP COLUMN IF EXISTS cookie_enc',
+    # Срок X стартует с первого !x-code (логина); фиксируем его время.
+    'ALTER TABLE x_rentals ADD COLUMN IF NOT EXISTS code_requested_at TIMESTAMP',
 )
 
 
@@ -67,39 +85,32 @@ def sync_schema():
             await conn.run_sync(Base.metadata.create_all)
             for stmt in _SCHEMA_PATCHES:
                 await conn.execute(sa.text(stmt))
-        await _seed_categories()
+        async with get_session() as session:
+            result = await seed_and_backfill(session)
+        logger.info('categories: %s', result.summary())
         await async_engine.dispose()
 
     asyncio.run(_sync())
-    logger.info('schema synced (tables + missing columns + base categories)')
+    logger.info('schema synced (tables + columns + categories backfilled)')
 
 
-async def _seed_categories() -> None:
-    """Идемпотентно создать базовое дерево категорий, если их ещё нет (dev).
+@cli.command('backfill-categories')
+def backfill_categories():
+    """Развесить существующие лоты по дереву категорий (идемпотентно).
 
-    Только скелет (Аренда → Steam/X, Автовыдача, Прочее); существующие лоты НЕ
-    переразвешиваются — это делает alembic-миграция в проде. Лоты без категории
-    трактуются как Steam-аренда (обратная совместимость).
+    Создаёт скелет, если его нет, и проставляет category_id всем лотам, у которых
+    он пуст: автовыдача → «Автовыдача», аренда с игрой → Steam/<игра>, без игры →
+    Steam. Гонять можно повторно — трогает только лоты без категории.
     """
-    from app.rental.common.enums import FulfillmentEnum, ProviderEnum
-    from app.rental.models.category import Category
+    setup_logging()
 
-    async with get_session() as session:
-        if await session.scalar(sa.select(sa.func.count(Category.id))):
-            return  # уже засеяно
-        rental = Category(title='Аренда', fulfillment=FulfillmentEnum.RENTAL, sort=0)
-        autodelivery = Category(
-            title='Автовыдача', fulfillment=FulfillmentEnum.AUTODELIVERY, sort=1,
-        )
-        other = Category(title='Прочее', fulfillment=FulfillmentEnum.OTHER, sort=2)
-        session.add_all([rental, autodelivery, other])
-        await session.flush()
-        session.add_all([
-            Category(title='Steam', parent_id=rental.id, provider=ProviderEnum.STEAM, sort=0),
-            Category(title='X', parent_id=rental.id, provider=ProviderEnum.X, sort=1),
-        ])
-        await session.commit()
-    logger.info('base categories seeded')
+    async def _run() -> None:
+        async with get_session() as session:
+            result = await seed_and_backfill(session)
+        click.echo(f'categories: {result.summary()}')
+        await async_engine.dispose()
+
+    asyncio.run(_run())
 
 
 @cli.command('reset-templates')
@@ -219,6 +230,7 @@ async def _run() -> None:
     from app.rental.poller import run_poller
     from app.rental.raiser import run_raiser
     from app.rental.steam.real import RealSteamModule
+    from app.rental.x_poller import run_x_expiry
     from app.runtime import RentalDeps, runtime
 
     settings = get_settings()
@@ -274,6 +286,7 @@ async def _run() -> None:
         asyncio.create_task(run_funpay_health()),
         asyncio.create_task(run_account_check()),
         asyncio.create_task(run_backup_scheduler(bot, admin_ids)),
+        asyncio.create_task(run_x_expiry(bot, admin_ids)),
     ]
     logger.info('admin bot started (funpay=real)')
     try:

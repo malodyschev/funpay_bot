@@ -9,6 +9,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from app.database import get_session
 from app.rental.admin_bot import formatters as fmt, keyboards as kb
 from app.rental.admin_bot.callbacks import Acc, Extend, LotOpen, MoveTo
+from app.rental.admin_bot.views import lot_screen
 from app.rental.common.enums import AccountStatusEnum
 from app.rental.common.exceptions import SteamModuleError
 from app.rental.services.admin import AdminService
@@ -46,14 +47,11 @@ async def open_lot(cb: CallbackQuery, callback_data: LotOpen) -> None:
     async with get_session() as session:
         svc = AdminService(session, runtime.get_deps())
         lot = await svc.get_lot(callback_data.lot_id)
-        views = await svc.accounts_of_lot(callback_data.lot_id)
-    if not lot:
-        await cb.answer('Лот не найден', show_alert=True)
-        return
-    await cb.message.edit_text(
-        fmt.fmt_lot(lot, len(views)),
-        reply_markup=kb.lot_accounts(views, lot),
-    )
+        if not lot:
+            await cb.answer('Лот не найден', show_alert=True)
+            return
+        text, markup = await lot_screen(svc, lot)
+    await cb.message.edit_text(text, reply_markup=markup)
     await cb.answer()
 
 

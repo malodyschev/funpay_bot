@@ -12,15 +12,22 @@ from app.rental.admin_bot.callbacks import (
     Menu,
     MoveTo,
     Refund,
+    SetCat,
+    XAcc,
+    XAddAccount,
+    XKick,
+    XReplace,
 )
 from app.rental.admin_bot.formatters import (
     account_button_label,
     category_button_label,
     lot_button_label,
     rental_button_label,
+    x_account_button_label,
 )
-from app.rental.common.enums import AccountStatusEnum, ProviderEnum
+from app.rental.common.enums import AccountStatusEnum
 from app.rental.models.lot import Lot
+from app.rental.models.x_account import XAccount
 from app.rental.services.admin import AccountView, CategoryBrowse, LotStock, RentalView
 
 
@@ -73,12 +80,18 @@ def category_menu(browse: CategoryBrowse) -> InlineKeyboardMarkup:
 
     node = browse.node
     node_id = node.id if node else 0
+    # В корне: бакет неразобранных + синхронизация с FunPay.
+    if node is None:
+        if browse.uncategorized:
+            kb.button(
+                text=f'🆕 Неразобранные ({browse.uncategorized})',
+                callback_data=Menu(action='uncategorized'),
+            )
+        kb.button(text='🔄 Синхр. с FunPay', callback_data=Menu(action='sync'))
     kb.button(text='➕ Подкатегория', callback_data=Cat(action='add', category_id=node_id))
     # Лот добавляем только в лист (узел без подкатегорий) — лоты живут на листьях.
     if node is not None and not browse.children:
         kb.button(text='➕ Лот сюда', callback_data=Cat(action='add_lot', category_id=node_id))
-    if browse.provider == ProviderEnum.STEAM:
-        kb.button(text='🔄 Синхр. с FunPay', callback_data=Menu(action='sync'))
 
     if node is None:
         kb.button(text='⬅️ В меню', callback_data=Menu(action='menu'))
@@ -88,6 +101,89 @@ def category_menu(browse: CategoryBrowse) -> InlineKeyboardMarkup:
             callback_data=Cat(action='open', category_id=node.parent_id or 0),
         )
     kb.adjust(1)
+    return kb.as_markup()
+
+
+def uncategorized_menu(lots: list[LotStock]) -> InlineKeyboardMarkup:
+    """Список синканных лотов без категории — выбрать лот, чтобы назначить категорию."""
+    kb = InlineKeyboardBuilder()
+    for ls in lots:
+        kb.button(text=lot_button_label(ls), callback_data=LotOpen(lot_id=ls.lot.id))
+    kb.button(text='🔄 Синхр. с FunPay', callback_data=Menu(action='sync'))
+    kb.button(text='⬅️ В каталог', callback_data=Menu(action='lots'))
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def category_picker(lot_id: int, paths: list[tuple]) -> InlineKeyboardMarkup:
+    """Выбор категории-листа для лота (paths = [(Category, 'путь / …'), …])."""
+    kb = InlineKeyboardBuilder()
+    for category, label in paths:
+        kb.button(text=f'📂 {label}', callback_data=SetCat(lot_id=lot_id, category_id=category.id))
+    kb.button(text='⬅️ Назад к лоту', callback_data=LotOpen(lot_id=lot_id))
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def x_lot_accounts(lot: Lot, accounts: list[XAccount]) -> InlineKeyboardMarkup:
+    """Экран X-лота: пул X-аккаунтов + добавление логин/пароль (без maFile/bind)."""
+    kb = InlineKeyboardBuilder()
+    for account in accounts:
+        kb.button(
+            text=x_account_button_label(account),
+            callback_data=XAcc(action='open', x_account_id=account.id),
+        )
+    kb.button(
+        text=f'⏱ Длительность ({lot.duration_minutes} мин)',
+        callback_data=LotAct(action='duration', lot_id=lot.id),
+    )
+    kb.button(
+        text='⚪️ Выключить лот' if lot.active else '🟢 Включить лот',
+        callback_data=LotAct(action='toggle_active', lot_id=lot.id),
+    )
+    kb.button(text='➕ Добавить X-аккаунт (логин+пароль)', callback_data=XAddAccount(lot_id=lot.id))
+    kb.button(text='📂 Категория', callback_data=LotAct(action='category', lot_id=lot.id))
+    kb.button(
+        text='⬅️ К категории',
+        callback_data=Cat(action='open', category_id=lot.category_id or 0),
+    )
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def x_account_card(account: XAccount) -> InlineKeyboardMarkup:
+    """Карточка X-аккаунта: креды (почта/пароль/код), правка, замена, удаление."""
+    aid = account.id
+    kb = InlineKeyboardBuilder()
+    kb.button(text='🔐 Получить креды', callback_data=XAcc(action='creds', x_account_id=aid))
+    kb.button(text='✏️ Обновить 2FA/пароль', callback_data=XAcc(action='edit', x_account_id=aid))
+    kb.button(text='🔄 Заменить аккаунт', callback_data=XAcc(action='replace', x_account_id=aid))
+    kb.button(text='🗑 Удалить аккаунт', callback_data=XAcc(action='delete', x_account_id=aid))
+    kb.button(
+        text='⬅️ К категории',
+        callback_data=Cat(action='open', category_id=account.category_id or 0),
+    )
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def x_replace_picker(old_id: int, candidates: list[XAccount]) -> InlineKeyboardMarkup:
+    """Выбор аккаунта, на который перенести аренды слетевшего."""
+    kb = InlineKeyboardBuilder()
+    for acc in candidates:
+        kb.button(
+            text=f'🟣 {acc.login} (slots {acc.slots})',
+            callback_data=XReplace(old_id=old_id, new_id=acc.id),
+        )
+    kb.button(text='⬅️ Отмена', callback_data=XAcc(action='open', x_account_id=old_id))
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def x_kick_button(rental_id: int) -> InlineKeyboardMarkup:
+    """Инлайн-кнопка под алертом об истечении X-аренды."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text='✅ Кикнул (закрыть)', callback_data=XKick(rental_id=rental_id))
     return kb.as_markup()
 
 
@@ -125,6 +221,7 @@ def lot_accounts(views: list[AccountView], lot: Lot) -> InlineKeyboardMarkup:
     if not lot.is_extension and not lot.is_autodelivery:
         kb.button(text='🔑 Привязать (логин+пароль)', callback_data=BindAccount(lot_id=lot.id))
         kb.button(text='📄 Добавить по maFile', callback_data=AddAccount(lot_id=lot.id))
+    kb.button(text='📂 Категория', callback_data=LotAct(action='category', lot_id=lot.id))
     # Назад — в категорию лота (legacy-лоты без категории → корень дерева).
     kb.button(
         text='⬅️ К категории',

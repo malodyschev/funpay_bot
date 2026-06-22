@@ -1,10 +1,12 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from logging import getLogger
+from operator import itemgetter
 from typing import ClassVar
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crypto import decrypt, encrypt
 from app.rental.common.enums import (
     AccountStatusEnum,
     ExtensionReasonEnum,
@@ -16,16 +18,20 @@ from app.rental.models.account import Account
 from app.rental.models.category import Category
 from app.rental.models.lot import Lot
 from app.rental.models.rental import Rental
+from app.rental.models.x_account import XAccount
 from app.rental.repositories.account import AccountRepository
 from app.rental.repositories.category import CategoryRepository
 from app.rental.repositories.lot import LotRepository
 from app.rental.repositories.rental import RentalRepository
+from app.rental.repositories.x_account import XAccountRepository
+from app.rental.repositories.x_rental import XRentalRepository
 from app.rental.services.base import get_repository
 from app.rental.services.credentials import build_credentials
 from app.rental.services.expire_rental import ExpireRentalService
 from app.rental.services.extend_rental import ExtendRentalService
 from app.rental.services.lot_visibility import sync_lot_visibility
 from app.rental.steam.interface import SteamSessionInfo
+from app.rental.x.totp import totp_now
 from app.runtime import RentalDeps
 
 
@@ -63,6 +69,7 @@ class CategoryBrowse:
     lots: list['LotStock']
     fulfillment: FulfillmentEnum | None
     provider: ProviderEnum | None
+    uncategorized: int = 0  # лотов без категории (показываем бакет в корне)
 
 
 @dataclass
@@ -114,6 +121,8 @@ class AdminService:
     rental_repo: ClassVar[RentalRepository] = get_repository(RentalRepository)
     lot_repo: ClassVar[LotRepository] = get_repository(LotRepository)
     category_repo: ClassVar[CategoryRepository] = get_repository(CategoryRepository)
+    x_account_repo: ClassVar[XAccountRepository] = get_repository(XAccountRepository)
+    x_rental_repo: ClassVar[XRentalRepository] = get_repository(XRentalRepository)
 
     # ---------- чтение ----------
 
@@ -121,28 +130,76 @@ class AdminService:
         """Содержимое узла дерева категорий: подкатегории + лоты с остатком."""
         node = await self.category_repo.get_or_none(id_=category_id) if category_id else None
         children = list(await self.category_repo.get_children(category_id))
+        fulfillment, provider = await self.category_repo.resolve(category_id)
         lots: list[LotStock] = []
         if category_id is not None:
             for lot in await self.lot_repo.list_by_category(category_id):
-                lots.append(await self._lot_stock(lot))
-        fulfillment, provider = await self.category_repo.resolve(category_id)
+                lots.append(await self._lot_stock(lot, provider))
+        # «Неразобранные» (лоты без категории) показываем только в корне.
+        uncategorized = await self.lot_repo.count_uncategorized() if category_id is None else 0
         return CategoryBrowse(
             node=node,
             children=children,
             lots=lots,
             fulfillment=fulfillment,
             provider=provider,
+            uncategorized=uncategorized,
         )
 
-    async def _lot_stock(self, lot: Lot) -> LotStock:
+    async def _lot_stock(self, lot: Lot, provider: ProviderEnum | None = None) -> LotStock:
+        # X-лоты считаем по своему пулу (x_accounts), а не по Steam-таблице accounts —
+        # иначе они всегда «красные» (0 стока) и показывают чужие кнопки.
+        if provider == ProviderEnum.X:
+            accounts = (
+                await self.x_account_repo.list_by_category(lot.category_id)
+                if lot.category_id
+                else []
+            )
+            total = len(accounts)
+            return LotStock(lot=lot, free=total, total=total, rented=0)
         accounts = await self.account_repo.list_by_lot(lot.id)
         free = sum(1 for a in accounts if a.status == AccountStatusEnum.FREE)
         rented = sum(1 for a in accounts if a.status == AccountStatusEnum.RENTED)
         return LotStock(lot=lot, free=free, total=len(accounts), rented=rented)
 
+    async def lot_provider(self, lot: Lot) -> ProviderEnum | None:
+        """Провайдер лота (резолв по его категории)."""
+        _, provider = await self.category_repo.resolve(lot.category_id)
+        return provider
+
     async def create_category(self, parent_id: int | None, title: str) -> Category:
         """Создать подкатегорию (provider/fulfillment наследуются от родителя)."""
         return await self.category_repo.create({'title': title, 'parent_id': parent_id})
+
+    async def uncategorized_lots(self) -> list[LotStock]:
+        """Лоты без категории (синканные черновики) с остатком."""
+        out: list[LotStock] = []
+        for lot in await self.lot_repo.list_uncategorized():
+            out.append(await self._lot_stock(lot))
+        return out
+
+    async def set_lot_category(self, lot_id: int, category_id: int) -> bool:
+        """Привязать лот к категории-листу (для разбора синканных черновиков)."""
+        if not await self.category_repo.get_or_none(id_=category_id):
+            return False
+        await self.lot_repo.update({'category_id': category_id}, id_=lot_id)
+        return True
+
+    async def category_paths(self) -> list[tuple[Category, str]]:
+        """Все категории с полным путём («Аренда / Steam / Dota 2») для пикера."""
+        cats = {c.id: c for c in await self.category_repo.get_all()}
+        out: list[tuple[Category, str]] = []
+        for category in cats.values():
+            parts: list[str] = []
+            current: Category | None = category
+            seen: set[int] = set()
+            while current is not None and current.id not in seen:
+                seen.add(current.id)
+                parts.append(current.title)
+                current = cats.get(current.parent_id) if current.parent_id else None
+            out.append((category, ' / '.join(reversed(parts))))
+        out.sort(key=itemgetter(1))
+        return out
 
     async def dashboard(self) -> Dashboard:
         """Счётчики по статусам аккаунтов + число активных аренд."""
@@ -169,7 +226,7 @@ class AdminService:
         for lot in await self.lot_repo.get_all():
             if lot.removed:
                 continue  # удалён на FunPay — в админке не показываем
-            out.append(await self._lot_stock(lot))
+            out.append(await self._lot_stock(lot, await self.lot_provider(lot)))
         return out
 
     async def get_lot(self, lot_id: int) -> Lot | None:
@@ -371,3 +428,94 @@ class AdminService:
             'active': True,
             'is_extension': is_extension,
         })
+
+    # ---------- X-аккаунты (пул шаренной аренды) ----------
+
+    async def x_accounts_of_category(self, category_id: int) -> list[XAccount]:
+        """X-аккаунты пула категории."""
+        return list(await self.x_account_repo.list_by_category(category_id))
+
+    async def get_x_account(self, x_account_id: int) -> XAccount | None:
+        return await self.x_account_repo.get_or_none(id_=x_account_id)
+
+    async def create_x_account(
+        self,
+        *,
+        category_id: int,
+        login: str,
+        password: str,
+        totp_secret: str | None,
+        slots: int,
+    ) -> XAccount:
+        """Добавить X-аккаунт в пул категории (пароль и 2FA-ключ шифруются)."""
+        return await self.x_account_repo.create({
+            'category_id': category_id,
+            'login': login,
+            'password_enc': encrypt(password),
+            'totp_secret_enc': encrypt(totp_secret) if totp_secret else None,
+            'slots': slots,
+        })
+
+    async def update_x_account(
+        self,
+        x_account_id: int,
+        *,
+        totp_secret: str | None = None,
+        password: str | None = None,
+        slots: int | None = None,
+    ) -> bool:
+        """Обновить 2FA-ключ / пароль / вместимость (переданные поля)."""
+        if not await self.x_account_repo.get_or_none(id_=x_account_id):
+            return False
+        values: dict = {}
+        if totp_secret is not None:
+            values['totp_secret_enc'] = encrypt(totp_secret) if totp_secret else None
+        if password is not None:
+            values['password_enc'] = encrypt(password)
+        if slots is not None:
+            values['slots'] = slots
+        if values:
+            await self.x_account_repo.update(values, id_=x_account_id)
+        return True
+
+    async def delete_x_account(self, x_account_id: int) -> None:
+        """Удалить X-аккаунт."""
+        await self.x_account_repo.delete(x_account_id)
+
+    async def x_account_code(self, x_account_id: int) -> str | None:
+        """Текущий TOTP-код входа для X-аккаунта (для проверки 2FA-ключа)."""
+        account = await self.get_x_account(x_account_id)
+        if not account or not account.totp_secret_enc:
+            return None
+        return totp_now(decrypt(account.totp_secret_enc))
+
+    async def x_account_creds(self, x_account_id: int) -> Credentials | None:
+        """Полные креды X-аккаунта: логин(почта) + пароль + текущий TOTP-код."""
+        account = await self.get_x_account(x_account_id)
+        if not account:
+            return None
+        code = (
+            totp_now(decrypt(account.totp_secret_enc))
+            if account.totp_secret_enc
+            else '— (нет 2FA)'
+        )
+        return Credentials(
+            login=account.login,
+            password=decrypt(account.password_enc),
+            code=code,
+        )
+
+    async def x_replace_candidates(self, old_account_id: int) -> list[XAccount]:
+        """Аккаунты пула, куда можно перенести аренды слетевшего (хватает слотов)."""
+        old = await self.get_x_account(old_account_id)
+        if not old or old.category_id is None:
+            return []
+        need = await self.x_rental_repo.count_active_by_account(old_account_id)
+        out: list[XAccount] = []
+        for account in await self.x_account_repo.list_by_category(old.category_id):
+            if account.id == old_account_id:
+                continue
+            free = account.slots - await self.x_rental_repo.count_active_by_account(account.id)
+            if free >= need:
+                out.append(account)
+        return out

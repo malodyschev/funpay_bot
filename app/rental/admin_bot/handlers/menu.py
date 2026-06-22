@@ -94,6 +94,22 @@ async def open_category(cb: CallbackQuery, callback_data: Cat) -> None:
     await _show_category(cb, callback_data.category_id or None)
 
 
+@router.callback_query(Menu.filter(F.action == 'uncategorized'))
+async def uncategorized(cb: CallbackQuery) -> None:
+    """Бакет синканных лотов без категории — назначить им категорию."""
+    async with get_session() as session:
+        lots = await AdminService(session, runtime.get_deps()).uncategorized_lots()
+    text = (
+        '🆕 <b>Неразобранные лоты</b>\n'
+        'Синканы с FunPay. Открой лот → «📂 Категория» → выбери, потом задай '
+        'длительность/аккаунт и включи.'
+        if lots
+        else '🆕 Неразобранных лотов нет.'
+    )
+    await cb.message.edit_text(text, reply_markup=kb.uncategorized_menu(lots))
+    await cb.answer()
+
+
 async def _show_category(cb: CallbackQuery, category_id: int | None) -> None:
     async with get_session() as session:
         browse = await AdminService(session, runtime.get_deps()).browse(category_id)

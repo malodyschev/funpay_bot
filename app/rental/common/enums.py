@@ -76,6 +76,20 @@ class ProviderEnum(StrEnum):
 
 
 @unique
+class XRentalStatusEnum(StrEnum):
+    """Статус аренды X (мультитенант: несколько аренд на одном аккаунте).
+
+    ACTIVE — идёт, занимает слот, код выдаётся; EXPIRED — срок вышел (слот сразу
+    освобождён, код не выдаём, админу алерт «кикни»); CLOSED — админ подтвердил
+    кик / закрыто вручную.
+    """
+
+    ACTIVE = 'active'
+    EXPIRED = 'expired'
+    CLOSED = 'closed'
+
+
+@unique
 class ExtensionReasonEnum(StrEnum):
     """Причина продления аренды (за отзыв, вручную админом или покупкой лота)."""
 

@@ -10,7 +10,8 @@ from aiogram.types import CallbackQuery, Message
 
 from app.database import get_session
 from app.rental.admin_bot import formatters as fmt, keyboards as kb
-from app.rental.admin_bot.callbacks import AddAccount, Cat, LotAct, Menu
+from app.rental.admin_bot.callbacks import AddAccount, Cat, LotAct, Menu, SetCat
+from app.rental.admin_bot.views import lot_screen
 from app.rental.common.commands import DEFAULT_DELIVERY_TEMPLATE
 from app.rental.common.exceptions import DuplicateException, SteamModuleError
 from app.rental.funpay.lot_sync import sync_lots
@@ -84,6 +85,38 @@ async def category_add_lot(cb: CallbackQuery, callback_data: Cat, state: FSMCont
     await cb.answer()
 
 
+# ---------- назначение категории лоту ----------
+
+@router.callback_query(LotAct.filter(F.action == 'category'))
+async def lot_category_pick(cb: CallbackQuery, callback_data: LotAct) -> None:
+    async with get_session() as session:
+        paths = await AdminService(session, runtime.get_deps()).category_paths()
+    if not paths:
+        await cb.answer('Сначала создай категории.', show_alert=True)
+        return
+    await cb.message.edit_text(
+        '📂 Выбери категорию для лота:',
+        reply_markup=kb.category_picker(callback_data.lot_id, paths),
+    )
+    await cb.answer()
+
+
+@router.callback_query(SetCat.filter())
+async def lot_category_apply(cb: CallbackQuery, callback_data: SetCat) -> None:
+    async with get_session() as session:
+        svc = AdminService(session, runtime.get_deps())
+        ok = await svc.set_lot_category(callback_data.lot_id, callback_data.category_id)
+        lot = await svc.get_lot(callback_data.lot_id)
+        screen = await lot_screen(svc, lot) if lot else None
+    if not ok:
+        await cb.answer('Категория не найдена', show_alert=True)
+        return
+    await cb.answer('Категория назначена')
+    if screen:
+        text, markup = screen
+        await cb.message.edit_text(text, reply_markup=markup)
+
+
 # ---------- синхронизация и конфиг лота ----------
 
 @router.callback_query(Menu.filter(F.action == 'sync'))
@@ -95,11 +128,11 @@ async def sync_funpay_lots(cb: CallbackQuery) -> None:
     await cb.answer('Синхронизирую с FunPay…')
     async with get_session() as session:
         sync_result = await sync_lots(session, account)
-        lots = await AdminService(session, runtime.get_deps()).lots_with_stock()
+        lots = await AdminService(session, runtime.get_deps()).uncategorized_lots()
     await cb.message.answer(
         f'🔄 FunPay: {sync_result.summary()}.\n'
-        'Новые лоты выключены — задай длительность, привяжи аккаунт и включи.',
-        reply_markup=kb.lots_menu(lots),
+        'Новые лоты — в «🆕 Неразобранные»: назначь категорию, длительность, аккаунт и включи.',
+        reply_markup=kb.uncategorized_menu(lots),
     )
 
 
@@ -116,11 +149,8 @@ async def lot_toggle_active(cb: CallbackQuery, callback_data: LotAct) -> None:
             return
         await svc.toggle_lot_active(callback_data.lot_id)
         lot = await svc.get_lot(callback_data.lot_id)
-        views = await svc.accounts_of_lot(callback_data.lot_id)
-    await cb.message.edit_text(
-        fmt.fmt_lot(lot, len(views)),
-        reply_markup=kb.lot_accounts(views, lot),
-    )
+        text, markup = await lot_screen(svc, lot)
+    await cb.message.edit_text(text, reply_markup=markup)
     await cb.answer('Лот включён' if lot.active else 'Лот выключен')
 
 
@@ -179,11 +209,8 @@ async def lot_duration_set(message: Message, state: FSMContext) -> None:
         svc = AdminService(session, runtime.get_deps())
         await svc.set_lot_duration(data['lot_id'], int(text))
         lot = await svc.get_lot(data['lot_id'])
-        views = await svc.accounts_of_lot(data['lot_id'])
-    await message.answer(
-        f'✅ Длительность: {int(text)} мин.',
-        reply_markup=kb.lot_accounts(views, lot),
-    )
+        _, markup = await lot_screen(svc, lot)
+    await message.answer(f'✅ Длительность: {int(text)} мин.', reply_markup=markup)
 
 
 # ---------- новый лот ----------

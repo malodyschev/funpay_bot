@@ -18,6 +18,32 @@ class Cat(CallbackData, prefix='cat'):
     category_id: int
 
 
+class XAddAccount(CallbackData, prefix='xaddacc'):
+    """Начать добавление X-аккаунта (логин+пароль+JWT) в лот."""
+
+    lot_id: int
+
+
+class XAcc(CallbackData, prefix='xacc'):
+    """Действие над X-аккаунтом: action=open|creds|code|edit|replace|delete|delete_yes."""
+
+    action: str
+    x_account_id: int
+
+
+class XReplace(CallbackData, prefix='xrepl'):
+    """Заменить X-аккаунт old_id на new_id (перенос аренд)."""
+
+    old_id: int
+    new_id: int
+
+
+class XKick(CallbackData, prefix='xkick'):
+    """Подтвердить ручной кик истёкшей X-аренды (закрыть)."""
+
+    rental_id: int
+
+
 class LotOpen(CallbackData, prefix='lot'):
     """Открыть список аккаунтов лота."""
 
@@ -62,10 +88,17 @@ class BindAccount(CallbackData, prefix='bindacc'):
 
 
 class LotAct(CallbackData, prefix='la'):
-    """Действие над лотом: action=duration|toggle_active|type_rental|type_ext|type_auto, lot_id."""
+    """Действие над лотом: action=duration|toggle_active|type_*|category, lot_id."""
 
     action: str
     lot_id: int
+
+
+class SetCat(CallbackData, prefix='setcat'):
+    """Привязать лот lot_id к категории category_id."""
+
+    lot_id: int
+    category_id: int
 
 
 class MoveTo(CallbackData, prefix='mv'):

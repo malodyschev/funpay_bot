@@ -3,6 +3,7 @@
 # только основную форму, чтобы никто не путался.
 ACC_COMMANDS = frozenset({'!acc', '!акк', '!аккаунт', '!креды', '/acc'})
 CODE_COMMANDS = frozenset({'!code', '!код', '/code'})
+X_CODE_COMMANDS = frozenset({'!x-code', '!xcode', '!x_code', '!х-код', '/xcode'})
 STOCK_COMMANDS = frozenset({'!free', '!фри', '!наличие', '!stock', '/free'})
 STOCK_ALL_COMMANDS = frozenset(
     {'!free-all', '!freeall', '!free_all', '!фри-все', '!всё', '!все', '/freeall'},

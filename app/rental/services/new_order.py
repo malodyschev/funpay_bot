@@ -6,7 +6,13 @@ from typing import ClassVar
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.rental.common.enums import AccountStatusEnum, ExtensionReasonEnum, RentalStatusEnum
+from app.crypto import decrypt
+from app.rental.common.enums import (
+    AccountStatusEnum,
+    ExtensionReasonEnum,
+    ProviderEnum,
+    RentalStatusEnum,
+)
 from app.rental.funpay.events import NewOrderEvent
 from app.rental.models.lot import Lot
 from app.rental.providers.registry import get_provider
@@ -16,8 +22,10 @@ from app.rental.repositories.extension import ExtensionRepository
 from app.rental.repositories.lot import LotRepository
 from app.rental.repositories.rental import RentalRepository
 from app.rental.services.base import get_repository
+from app.rental.services.delivery import render_delivery
 from app.rental.services.extend_rental import ExtendRentalService
 from app.rental.services.lot_visibility import sync_lot_visibility
+from app.rental.services.x_rental import XRentalService
 from app.runtime import RentalDeps
 
 
@@ -57,6 +65,11 @@ class NewOrderService:
 
         if lots[0].is_extension:
             await self._handle_extension(event, lots[0])
+            return
+
+        _, provider = await self.category_repo.resolve(lots[0].category_id)
+        if provider == ProviderEnum.X:
+            await self._handle_x_order(event, lots[0])
             return
 
         # Несколько лотов могут называться одинаково — берём первый со свободным
@@ -162,3 +175,42 @@ class NewOrderService:
             f'Нет свободных аккаунтов под лот "{lot_title}" (заказ {event.order_id})',
         )
         await self.deps.notifier.request_refund(event.order_id, 'no free account')
+
+    async def _handle_x_order(self, event: NewOrderEvent, lot: Lot) -> None:
+        """Заказ X: подобрать аккаунт пула (least-loaded) и выдать login+password."""
+        result = await XRentalService(self.session, self.deps).place(
+            lot,
+            buyer_id=event.buyer_id,
+            buyer_username=event.buyer_username,
+            chat_id=event.chat_id,
+            order_id=event.order_id,
+            amount=event.amount,
+        )
+        if result.reason == 'duplicate':
+            logger.info('x order %s already processed, skip', event.order_id)
+            return
+        if result.account is None:  # no_capacity | no_pool
+            await self.deps.funpay.send_message(
+                event.chat_id,
+                'Извините, сейчас нет свободных мест. Оформляется возврат.',
+            )
+            await self.deps.notifier.notify(
+                f'Нет мест в пуле X под лот "{lot.title}" ({result.reason}), '
+                f'заказ {event.order_id}',
+            )
+            await self.deps.notifier.request_refund(event.order_id, f'x {result.reason}')
+            return
+
+        account = result.account
+        total_minutes = lot.duration_minutes * max(1, event.amount)
+        text = render_delivery(
+            lot.delivery_template,
+            login=account.login,
+            password=decrypt(account.password_enc),
+            minutes=total_minutes,
+            game=lot.game or '',
+        )
+        # У X код входа — TOTP по !x-code (а не Guard).
+        text += '\n\n🔑 Код входа (2FA): отправьте !x-code'
+        await self.deps.funpay.send_message(event.chat_id, text)
+        logger.info('x rental created for order %s on account %s', event.order_id, account.id)

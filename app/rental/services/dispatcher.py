@@ -12,6 +12,7 @@ from app.rental.common.commands import (
     STOCK_ALL_COMMANDS,
     STOCK_COMMANDS,
     TIME_COMMANDS,
+    X_CODE_COMMANDS,
 )
 from app.rental.common.enums import ExtensionReasonEnum
 from app.rental.funpay.events import NewMessageEvent, NewOrderEvent, NewReviewEvent
@@ -20,7 +21,15 @@ from app.rental.services.extend_rental import ExtendRentalService
 from app.rental.services.guard_code import GuardCodeService
 from app.rental.services.info import InfoService
 from app.rental.services.new_order import NewOrderService
+from app.rental.services.x_rental import XRentalService
 from app.runtime import runtime
+
+
+_X_CODE_MESSAGES = {
+    'expired': 'Подписка истекла. Оформите новый заказ, чтобы продолжить.',
+    'none': 'Код выдаётся во время активной аренды. Сначала оплатите заказ.',
+    'no_2fa': 'Код временно недоступен — напишите !admin.',
+}
 
 
 logger = getLogger(__name__)
@@ -49,6 +58,14 @@ async def on_new_message(event: NewMessageEvent) -> None:
     async with get_session() as session:
         if text in CODE_COMMANDS:
             await GuardCodeService(session, deps).handle(event)
+        elif text in X_CODE_COMMANDS:
+            result = await XRentalService(session, deps).code_for_chat(event.chat_id)
+            message = (
+                f'🔑 Код входа: {result.code}'
+                if result.reason == 'ok'
+                else _X_CODE_MESSAGES[result.reason]
+            )
+            await deps.funpay.send_message(event.chat_id, message)
         elif text in ACC_COMMANDS:
             await InfoService(session, deps).send_credentials(event.chat_id)
         elif text in ADMIN_COMMANDS:

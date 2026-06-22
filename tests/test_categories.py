@@ -1,12 +1,17 @@
 import pytest_asyncio
+import sqlalchemy as sa
 
 from app.database import async_engine, async_session
 from app.rental.common.enums import FulfillmentEnum, ProviderEnum
 from app.rental.models import Base, Category
+from app.rental.models.lot import Lot
 from app.rental.providers.registry import get_provider
 from app.rental.providers.steam import SteamProvider
 from app.rental.providers.x import XProvider
 from app.rental.repositories.category import CategoryRepository
+from app.rental.services.admin import AdminService
+from app.rental.services.category_setup import seed_and_backfill
+from app.runtime import RentalDeps
 
 
 @pytest_asyncio.fixture
@@ -60,3 +65,48 @@ def test_registry_maps_provider():
     assert isinstance(get_provider(None, deps=None), SteamProvider)
     assert isinstance(get_provider(ProviderEnum.STEAM, deps=None), SteamProvider)
     assert isinstance(get_provider(ProviderEnum.X, deps=None), XProvider)
+
+
+async def test_seed_and_backfill_assigns_legacy_lots(session):
+    """Старые лоты без категории развешиваются: Dota→Steam/<игра>, автовыдача→Автовыдача."""
+    session.add_all([
+        Lot(title='Dota A', game='Dota 2', duration_minutes=60, delivery_template='t'),
+        Lot(title='Dota B', game='Dota 2', duration_minutes=120, delivery_template='t'),
+        Lot(title='Key', duration_minutes=0, delivery_template='t', is_autodelivery=True),
+    ])
+    await session.commit()
+
+    result = await seed_and_backfill(session)
+    assert result.skeleton_created
+    assert result.games_created == 1  # одна подкатегория «Dota 2»
+
+    lots = list(await session.scalars(sa.select(Lot)))
+    assert all(lot.category_id is not None for lot in lots)
+
+    repo = CategoryRepository(session)
+    dota = next(lot for lot in lots if lot.title == 'Dota A')
+    fulfillment, provider = await repo.resolve(dota.category_id)
+    assert (fulfillment, provider) == (FulfillmentEnum.RENTAL, ProviderEnum.STEAM)
+
+    # повторный прогон ничего не трогает (идемпотентность)
+    again = await seed_and_backfill(session)
+    assert again.lots_backfilled == 0
+
+
+async def test_uncategorized_bucket_and_set_category(session):
+    """Синканный лот без категории виден в «неразобранных» и назначается в дерево."""
+    await seed_and_backfill(session)  # скелет дерева
+    svc = AdminService(session, RentalDeps(funpay=None, steam=None, notifier=None))
+
+    lot = Lot(title='Synced draft', duration_minutes=0, delivery_template='t', active=False)
+    session.add(lot)
+    await session.commit()
+
+    assert any(ls.lot.id == lot.id for ls in await svc.uncategorized_lots())
+
+    paths = await svc.category_paths()
+    steam = next(c for c, _ in paths if c.provider == ProviderEnum.STEAM)
+    assert await svc.set_lot_category(lot.id, steam.id)
+
+    assert all(ls.lot.id != lot.id for ls in await svc.uncategorized_lots())
+    assert (await svc.get_lot(lot.id)).category_id == steam.id

@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from app.rental.common.enums import AccountStatusEnum, FulfillmentEnum, ProviderEnum
 from app.rental.models.category import Category
 from app.rental.models.lot import Lot
+from app.rental.models.x_account import XAccount
 from app.rental.services.admin import (
     AccountView,
     CategoryBrowse,
@@ -70,6 +71,37 @@ def category_button_label(category: Category) -> str:
     icon = _FULFILLMENT_ICON.get(category.fulfillment, '📁') if category.fulfillment else '📁'
     suffix = '' if category.active else ' ⚪️'
     return f'{icon} {category.title}{suffix}'
+
+
+def x_account_button_label(account: XAccount) -> str:
+    """Подпись кнопки X-аккаунта в списке лота."""
+    code = '🔑' if account.totp_secret_enc else '⚠️ без 2FA'
+    return f'🟣 {account.login} · slots {account.slots} · {code}'
+
+
+def fmt_lot_x(lot: Lot, accounts: list[XAccount]) -> str:
+    """Шапка X-лота (шаренная аренда)."""
+    status = '🟢 активен' if lot.active else '⚪️ выключен'
+    dur = f'{lot.duration_minutes} мин.' + ('' if lot.duration_minutes else ' ⚠️ не задана')
+    total_slots = sum(a.slots for a in accounts)
+    lines = [
+        f'🟣 <b>{html.escape(lot.title)}</b>',
+        f'X · шаренная аренда · {status}',
+        f'Длительность: {dur}',
+        f'X-аккаунтов в пуле: {len(accounts)} (всего мест: {total_slots})',
+    ]
+    if not lot.active:
+        lines.append('\n⚠️ Лот выключен — заказы по нему не обрабатываются.')
+    return '\n'.join(lines)
+
+
+def fmt_x_account_card(account: XAccount) -> str:
+    """Карточка X-аккаунта."""
+    return '\n'.join([
+        f'🟣 <b>X-аккаунт #{account.id}</b> — {html.escape(account.login)}',
+        f'Вместимость (slots): {account.slots}',
+        f'2FA-ключ: {"есть ✅" if account.totp_secret_enc else "нет ⚠️"}',
+    ])
 
 
 def fmt_category(browse: CategoryBrowse) -> str:
