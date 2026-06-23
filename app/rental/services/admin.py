@@ -18,6 +18,7 @@ from app.rental.common.enums import (
 from app.rental.models.account import Account
 from app.rental.models.category import Category
 from app.rental.models.chat_account import ChatAccount
+from app.rental.models.chat_rental import ChatRental
 from app.rental.models.lot import Lot
 from app.rental.models.rental import Rental
 from app.rental.repositories.account import AccountRepository
@@ -91,12 +92,52 @@ class RentalView:
 
 
 @dataclass
+class ChatRentalView:
+    """Активная Chat-аренда с её аккаунтом пула и лотом."""
+
+    rental: ChatRental
+    account: ChatAccount | None
+    lot: Lot | None
+
+
+@dataclass
+class RentalCounts:
+    """Счётчики активных аренд по типам (для подменю «Активные аренды»)."""
+
+    steam: int
+    chat: int
+
+
+@dataclass
 class Credentials:
     """Раскрытые секреты аккаунта для админа (по кнопке)."""
 
     login: str
     password: str
     code: str
+
+
+@dataclass
+class ChatAccountLoad:
+    """Chat-аккаунт пула + сколько слотов на нём занято (активные аренды)."""
+
+    account: ChatAccount
+    used: int
+
+    @property
+    def free(self) -> int:
+        return max(0, self.account.slots - self.used)
+
+
+@dataclass
+class ChatPoolStat:
+    """Сводка по пулу Chat одной категории (для дашборда)."""
+
+    category_id: int
+    title: str
+    accounts: int  # сколько активных аккаунтов в пуле
+    used: int      # занято слотов
+    total: int     # всего слотов
 
 
 @dataclass
@@ -263,6 +304,23 @@ class AdminService:
             lot = await self.lot_repo.get_or_none(id_=rental.lot_id)
             out.append(RentalView(rental=rental, account=account, lot=lot))
         return out
+
+    async def active_chat_rentals(self) -> list[ChatRentalView]:
+        """Все активные Chat-аренды с аккаунтом пула и лотом."""
+        rentals = await self.chat_rental_repo.get_active()
+        out: list[ChatRentalView] = []
+        for rental in rentals:
+            account = await self.chat_account_repo.get_or_none(id_=rental.chat_account_id)
+            lot = await self.lot_repo.get_or_none(id_=rental.lot_id) if rental.lot_id else None
+            out.append(ChatRentalView(rental=rental, account=account, lot=lot))
+        return out
+
+    async def rental_counts(self) -> RentalCounts:
+        """Сколько активных аренд по типам (для подменю «Активные аренды»)."""
+        return RentalCounts(
+            steam=await self.rental_repo.count_active(),
+            chat=await self.chat_rental_repo.count_active(),
+        )
 
     async def reveal_credentials(self, account_id: int) -> Credentials | None:
         """Расшифровать креды аккаунта и сгенерировать текущий Guard-код."""
@@ -504,6 +562,38 @@ class AdminService:
             password=decrypt(account.password_enc),
             code=code,
         )
+
+    async def chat_account_load(self, chat_account_id: int) -> int:
+        """Сколько слотов занято на аккаунте (активные аренды)."""
+        return await self.chat_rental_repo.count_active_by_account(chat_account_id)
+
+    async def chat_pool_loads(self, category_id: int) -> list[ChatAccountLoad]:
+        """Аккаунты пула категории с занятостью слотов (один запрос на загрузку)."""
+        accounts = await self.chat_account_repo.list_by_category(category_id)
+        loads = await self.chat_rental_repo.active_load_by_category(category_id)
+        return [ChatAccountLoad(account=a, used=loads.get(a.id, 0)) for a in accounts]
+
+    async def chat_pools(self) -> list[ChatPoolStat]:
+        """Сводка по всем Chat-пулам: аккаунтов и занято/всего мест по категориям."""
+        accounts = await self.chat_account_repo.list_all_active()
+        by_category: dict[int, list[ChatAccount]] = {}
+        for account in accounts:
+            if account.category_id is None:
+                continue
+            by_category.setdefault(account.category_id, []).append(account)
+        out: list[ChatPoolStat] = []
+        for category_id, accs in by_category.items():
+            category = await self.category_repo.get_or_none(id_=category_id)
+            used = await self.chat_rental_repo.count_active_in_category(category_id)
+            out.append(ChatPoolStat(
+                category_id=category_id,
+                title=category.title if category else f'#{category_id}',
+                accounts=len(accs),
+                used=used,
+                total=sum(a.slots for a in accs),
+            ))
+        out.sort(key=lambda s: s.title)
+        return out
 
     async def chat_replace_candidates(self, old_account_id: int) -> list[ChatAccount]:
         """Аккаунты пула, куда можно перенести аренды слетевшего (хватает слотов)."""

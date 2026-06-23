@@ -19,7 +19,7 @@ class Cat(CallbackData, prefix='cat'):
 
 
 class ChatAddAccount(CallbackData, prefix='chataddacc'):
-    """Начать добавление Chat-аккаунта (логин+пароль+JWT) в лот."""
+    """Начать добавление Chat-аккаунта (логин+пароль+2FA-ключ) в лот."""
 
     lot_id: int
 

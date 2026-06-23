@@ -111,12 +111,14 @@ async def chat_add_slots(message: Message, state: FSMContext) -> None:
 
 async def _show_card(cb: CallbackQuery, chat_account_id: int) -> None:
     async with get_session() as session:
-        account = await AdminService(session, runtime.get_deps()).get_chat_account(chat_account_id)
+        svc = AdminService(session, runtime.get_deps())
+        account = await svc.get_chat_account(chat_account_id)
+        used = await svc.chat_account_load(chat_account_id) if account else 0
     if not account:
         await cb.answer('Аккаунт не найден', show_alert=True)
         return
     await cb.message.edit_text(
-        fmt.fmt_chat_account_card(account),
+        fmt.fmt_chat_account_card(account, used),
         reply_markup=kb.chat_account_card(account),
     )
 
@@ -175,18 +177,18 @@ async def chat_edit_password(message: Message, state: FSMContext) -> None:
     with contextlib.suppress(TelegramBadRequest):
         await message.delete()
     async with get_session() as session:
-        await AdminService(session, runtime.get_deps()).update_chat_account(
+        svc = AdminService(session, runtime.get_deps())
+        await svc.update_chat_account(
             data['chat_account_id'],
             totp_secret=data.get('totp'),
             password=None if text == _SKIP else text,
         )
-        account = await AdminService(session, runtime.get_deps()).get_chat_account(
-            data['chat_account_id'],
-        )
+        account = await svc.get_chat_account(data['chat_account_id'])
+        used = await svc.chat_account_load(data['chat_account_id']) if account else 0
     await message.answer('✅ Обновлено.')
     if account:
         await message.answer(
-            fmt.fmt_chat_account_card(account),
+            fmt.fmt_chat_account_card(account, used),
             reply_markup=kb.chat_account_card(account),
         )
 

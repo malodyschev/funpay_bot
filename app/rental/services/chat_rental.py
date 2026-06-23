@@ -35,7 +35,7 @@ CHAT_EXPIRY_MESSAGE = (
 
 @dataclass
 class ChatPlaceResult:
-    """Итог размещения заказа X в пуле."""
+    """Итог размещения заказа Chat в пуле."""
 
     account: ChatAccount | None
     rental: ChatRental | None
@@ -208,7 +208,7 @@ class ChatRentalService:
                 '🎉 Спасибо за отзыв! Дарим +1 день аренды 🎁\n'
                 '⏳ Время уже добавлено к вашей подписке. Приятного пользования! ✨',
             )
-        logger.info('x rental %s extended for review (+%s min)', rental.id,
+        logger.info('chat rental %s extended for review (+%s min)', rental.id,
                     CHAT_REVIEW_BONUS_MINUTES)
         return True
 
@@ -318,6 +318,6 @@ class ChatRentalService:
                     f'Логин: {new.login}\nПароль: {new_password}\n'
                     'Код входа — команда !chat-code.',
                 )
-        logger.info('x replace %s -> %s: moved %s rentals', old_account_id,
+        logger.info('chat replace %s -> %s: moved %s rentals', old_account_id,
                     new_account_id, len(active))
         return ChatReplaceResult(True, moved=len(active))

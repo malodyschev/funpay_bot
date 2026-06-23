@@ -52,6 +52,41 @@ class ChatRentalRepository(Repository[ChatRental]):
         result = await self.execute(query)
         return result.scalar() or 0
 
+    async def active_load_by_category(self, category_id: int) -> dict[int, int]:
+        """Загрузка каждого аккаунта пула за один запрос: {chat_account_id: занято слотов}.
+
+        Аккаунты без активных аренд в словарь не попадают (читатель берёт .get(id, 0)).
+        """
+        from app.rental.models.chat_account import ChatAccount
+        query = (
+            sa.select(ChatRental.chat_account_id, sa.func.count(ChatRental.id))
+            .join(ChatAccount, ChatRental.chat_account_id == ChatAccount.id)
+            .where(
+                ChatAccount.category_id == category_id,
+                ChatRental.status == ChatRentalStatusEnum.ACTIVE,
+            )
+            .group_by(ChatRental.chat_account_id)
+        )
+        result = await self.execute(query)
+        return dict(result.all())
+
+    async def get_active(self) -> Sequence[ChatRental]:
+        """Все активные Chat-аренды (для списка в админке), ближайшие к концу первыми."""
+        query = (
+            sa.select(ChatRental)
+            .where(ChatRental.status == ChatRentalStatusEnum.ACTIVE)
+            .order_by(ChatRental.expires_at)
+        )
+        return await self.scalars(query)
+
+    async def count_active(self) -> int:
+        """Число активных Chat-аренд (для счётчика в меню/дашборде)."""
+        query = sa.select(sa.func.count(ChatRental.id)).where(
+            ChatRental.status == ChatRentalStatusEnum.ACTIVE,
+        )
+        result = await self.execute(query)
+        return result.scalar() or 0
+
     async def active_by_account(self, chat_account_id: int) -> Sequence[ChatRental]:
         """Активные аренды аккаунта (для замены/кика)."""
         query = sa.select(ChatRental).where(

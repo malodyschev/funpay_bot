@@ -18,6 +18,15 @@ class ChatAccountRepository(Repository[ChatAccount]):
         )
         return await self.scalars(query)
 
+    async def list_all_active(self) -> Sequence[ChatAccount]:
+        """Все аккаунты пула (не выведенные из пула) во всех категориях — для дашборда."""
+        query = (
+            sa.select(ChatAccount)
+            .where(ChatAccount.removed.is_(False))
+            .order_by(ChatAccount.category_id, ChatAccount.id)
+        )
+        return await self.scalars(query)
+
     async def lock(self, account_id: int) -> ChatAccount | None:
         """Заблокировать строку аккаунта (FOR UPDATE) до конца транзакции.
 

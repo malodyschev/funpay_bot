@@ -9,8 +9,12 @@ from app.rental.models.lot import Lot
 from app.rental.services.admin import (
     AccountView,
     CategoryBrowse,
+    ChatAccountLoad,
+    ChatPoolStat,
+    ChatRentalView,
     Dashboard,
     LotStock,
+    RentalCounts,
     RentalView,
     Stats,
 )
@@ -73,33 +77,37 @@ def category_button_label(category: Category) -> str:
     return f'{icon} {category.title}{suffix}'
 
 
-def chat_account_button_label(account: ChatAccount) -> str:
-    """Подпись кнопки Chat-аккаунта в списке лота."""
+def chat_account_button_label(load: ChatAccountLoad) -> str:
+    """Подпись кнопки Chat-аккаунта в списке лота (с занятостью слотов)."""
+    account = load.account
     code = '🔑' if account.totp_secret_enc else '⚠️ без 2FA'
-    return f'🟣 {account.login} · slots {account.slots} · {code}'
+    return f'🟣 {account.login} · {load.used}/{account.slots} мест · {code}'
 
 
-def fmt_lot_chat(lot: Lot, accounts: list[ChatAccount]) -> str:
-    """Шапка Chat-лота (шаренная аренда)."""
+def fmt_lot_chat(lot: Lot, loads: list[ChatAccountLoad]) -> str:
+    """Шапка Chat-лота (шаренная аренда) с занятостью пула."""
     status = '🟢 активен' if lot.active else '⚪️ выключен'
     dur = f'{lot.duration_minutes} мин.' + ('' if lot.duration_minutes else ' ⚠️ не задана')
-    total_slots = sum(a.slots for a in accounts)
+    total_slots = sum(load.account.slots for load in loads)
+    used = sum(load.used for load in loads)
     lines = [
         f'🟣 <b>{html.escape(lot.title)}</b>',
         f'Chat · шаренная аренда · {status}',
         f'Длительность: {dur}',
-        f'Chat-аккаунтов в пуле: {len(accounts)} (всего мест: {total_slots})',
+        f'Chat-аккаунтов в пуле: {len(loads)}',
+        f'Занято мест: <b>{used}</b>/{total_slots} (свободно {max(0, total_slots - used)})',
     ]
     if not lot.active:
         lines.append('\n⚠️ Лот выключен — заказы по нему не обрабатываются.')
     return '\n'.join(lines)
 
 
-def fmt_chat_account_card(account: ChatAccount) -> str:
-    """Карточка Chat-аккаунта."""
+def fmt_chat_account_card(account: ChatAccount, used: int = 0) -> str:
+    """Карточка Chat-аккаунта (с занятостью слотов)."""
+    free = max(0, account.slots - used)
     return '\n'.join([
         f'🟣 <b>Chat-аккаунт #{account.id}</b> — {html.escape(account.login)}',
-        f'Вместимость (slots): {account.slots}',
+        f'Занято: <b>{used}</b>/{account.slots} (свободно {free})',
         f'2FA-ключ: {"есть ✅" if account.totp_secret_enc else "нет ⚠️"}',
     ])
 
@@ -194,12 +202,32 @@ def buyer_link(buyer_id: int | None, username: str | None) -> str:
     return name
 
 
-def fmt_dashboard(dash: Dashboard, lots: list[LotStock]) -> str:
-    """Главный экран: счётчики статусов, активные аренды, остатки по лотам."""
+def fmt_chat_pools(pools: list[ChatPoolStat]) -> list[str]:
+    """Строки секции «Chat-пулы» для дашборда: аккаунтов и занято/всего мест."""
+    if not pools:
+        return []
+    lines = ['', _RULE, '🟣 <b>Chat-пулы</b>']
+    for p in pools:
+        free = max(0, p.total - p.used)
+        mark = '🟢' if free > 0 else '🔴'
+        lines.append(
+            f'{mark} {html.escape(p.title)} · акк: <b>{p.accounts}</b> · '
+            f'мест: <b>{p.used}</b>/{p.total} (свободно {free})',
+        )
+    return lines
+
+
+def fmt_dashboard(
+    dash: Dashboard,
+    lots: list[LotStock],
+    chat_pools: list[ChatPoolStat] | None = None,
+) -> str:
+    """Главный экран: счётчики статусов, активные аренды, остатки по лотам, Chat-пулы."""
     total = sum(dash.status_counts.values())
+    chat_pools = chat_pools or []
     lines = ['📊 <b>Дашборд</b>', '']
 
-    if total == 0:
+    if total == 0 and not chat_pools:
         lines.append('Пул пуст. Добавь лот и аккаунты в разделе «🗂 Лоты».')
         return '\n'.join(lines)
 
@@ -232,6 +260,8 @@ def fmt_dashboard(dash: Dashboard, lots: list[LotStock]) -> str:
             lines.append(
                 f'{lot_mark(ls)} {html.escape(ls.lot.title)} · <b>{ls.free}</b>/{ls.total}{tail}',
             )
+
+    lines += fmt_chat_pools(chat_pools)
     return '\n'.join(lines)
 
 
@@ -300,10 +330,10 @@ def account_button_label(view: AccountView) -> str:
 
 
 def fmt_rentals(views: list[RentalView]) -> str:
-    """Список активных аренд."""
+    """Список активных Steam-аренд."""
     if not views:
-        return '<b>📋 Активные аренды</b>\n\nНет активных аренд.'
-    lines = ['<b>📋 Активные аренды</b>', '']
+        return '<b>🎮 Активные аренды Steam</b>\n\nНет активных аренд.'
+    lines = ['<b>🎮 Активные аренды Steam</b>', '']
     for v in views:
         login = html.escape(v.account.login) if v.account else f'acc#{v.rental.account_id}'
         lines.append(
@@ -317,3 +347,33 @@ def rental_button_label(view: RentalView) -> str:
     """Подпись кнопки аренды в списке."""
     login = view.account.login if view.account else f'acc#{view.rental.account_id}'
     return f'🔵 {login} · ⏳{minutes_left(view.rental.expires_at)}м'
+
+
+def fmt_rentals_root(counts: RentalCounts) -> str:
+    """Подменю «Активные аренды»: выбор типа (Steam / Chat) со счётчиками."""
+    return (
+        '<b>📋 Активные аренды</b>\n\n'
+        f'🎮 Steam — <b>{counts.steam}</b>\n'
+        f'🟣 Chat — <b>{counts.chat}</b>\n\n'
+        'Выбери тип, чтобы посмотреть список.'
+    )
+
+
+def fmt_chat_rentals(views: list[ChatRentalView]) -> str:
+    """Список активных Chat-аренд."""
+    if not views:
+        return '<b>🟣 Активные аренды Chat</b>\n\nНет активных аренд.'
+    lines = ['<b>🟣 Активные аренды Chat</b>', '']
+    for v in views:
+        login = html.escape(v.account.login) if v.account else f'acc#{v.rental.chat_account_id}'
+        lines.append(
+            f'🟣 <b>{login}</b> — {buyer_link(v.rental.buyer_id, v.rental.buyer_username)}\n'
+            f'   истекает {_dt(v.rental.expires_at)} (~{minutes_left(v.rental.expires_at)} мин.)',
+        )
+    return '\n'.join(lines)
+
+
+def chat_rental_button_label(view: ChatRentalView) -> str:
+    """Подпись кнопки Chat-аренды в списке."""
+    login = view.account.login if view.account else f'acc#{view.rental.chat_account_id}'
+    return f'🟣 {login} · ⏳{minutes_left(view.rental.expires_at)}м'

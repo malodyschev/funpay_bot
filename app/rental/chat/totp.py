@@ -1,6 +1,6 @@
 """Генерация TOTP-кода (RFC 6238) из 2FA-ключа — стандартный Google-Authenticator.
 
-X (=ChatGPT/OpenAI) использует обычный TOTP, поэтому код считаем сами из base32-
+Chat (=ChatGPT/OpenAI) использует обычный TOTP, поэтому код считаем сами из base32-
 секрета, без внешних либ и без обращения к API.
 """
 import base64

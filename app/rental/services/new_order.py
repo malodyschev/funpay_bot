@@ -189,7 +189,7 @@ class NewOrderService:
             amount=event.amount,
         )
         if result.reason == 'duplicate':
-            logger.info('x order %s already processed, skip', event.order_id)
+            logger.info('chat order %s already processed, skip', event.order_id)
             return
         if result.account is None:  # no_capacity | no_pool
             await self.deps.funpay.send_message(
@@ -200,12 +200,12 @@ class NewOrderService:
                 f'Нет мест в пуле Chat под лот "{lot.title}" ({result.reason}), '
                 f'заказ {event.order_id}',
             )
-            await self.deps.notifier.request_refund(event.order_id, f'x {result.reason}')
+            await self.deps.notifier.request_refund(event.order_id, f'chat {result.reason}')
             return
 
         account = result.account
         total_minutes = lot.duration_minutes * max(1, event.amount)
-        # X — отдельный шаблон выдачи (не Steam-овский lot.delivery_template).
+        # Chat — отдельный шаблон выдачи (не Steam-овский lot.delivery_template).
         text = render_delivery(
             CHAT_DELIVERY_TEMPLATE,
             login=account.login,

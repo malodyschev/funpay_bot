@@ -28,7 +28,7 @@ from app.rental.services.new_order import NewOrderService
 from app.runtime import runtime
 
 
-_X_CODE_MESSAGES = {
+_CHAT_CODE_MESSAGES = {
     'expired': (
         '⏳ Ваша подписка закончилась 😔\n'
         'Спасибо, что были с нами! Чтобы снова пользоваться — '
@@ -74,7 +74,7 @@ async def on_new_message(event: NewMessageEvent) -> None:
                 f'🔑 Ваш код входа: {result.code}\n'
                 '⏳ Действует ~30 секунд — введите быстро. Нужен новый — снова !chat-code.'
                 if result.reason == 'ok'
-                else _X_CODE_MESSAGES[result.reason]
+                else _CHAT_CODE_MESSAGES[result.reason]
             )
             await deps.funpay.send_message(event.chat_id, message)
         elif text in CHAT_ACC_COMMANDS:

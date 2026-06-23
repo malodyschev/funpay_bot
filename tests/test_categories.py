@@ -1,3 +1,4 @@
+import pytest
 import pytest_asyncio
 import sqlalchemy as sa
 
@@ -5,7 +6,6 @@ from app.database import async_engine, async_session
 from app.rental.common.enums import FulfillmentEnum, ProviderEnum
 from app.rental.models import Base, Category
 from app.rental.models.lot import Lot
-from app.rental.providers.chat import ChatProvider
 from app.rental.providers.registry import get_provider
 from app.rental.providers.steam import SteamProvider
 from app.rental.repositories.category import CategoryRepository
@@ -64,7 +64,9 @@ def test_registry_maps_provider():
     # None (legacy-лот) → Steam ради обратной совместимости.
     assert isinstance(get_provider(None, deps=None), SteamProvider)
     assert isinstance(get_provider(ProviderEnum.STEAM, deps=None), SteamProvider)
-    assert isinstance(get_provider(ProviderEnum.CHAT, deps=None), ChatProvider)
+    # Chat не ходит через провайдер — get_provider для CHAT бьёт явной ошибкой.
+    with pytest.raises(ValueError, match='ChatRentalService'):
+        get_provider(ProviderEnum.CHAT, deps=None)
 
 
 async def test_seed_and_backfill_assigns_legacy_lots(session):

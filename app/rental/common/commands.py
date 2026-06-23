@@ -77,7 +77,7 @@ DEFAULT_DELIVERY_TEMPLATE = (
     '🎁 Оставьте отзыв 5★ — добавим час аренды в подарок!'
 )
 
-# Сообщение выдачи для X (отдельное от Steam): код входа — TOTP по !chat-code.
+# Сообщение выдачи для Chat (отдельное от Steam): код входа — TOTP по !chat-code.
 CHAT_DELIVERY_TEMPLATE = (
     '✅ Оплата получена!\n'
     '\n'

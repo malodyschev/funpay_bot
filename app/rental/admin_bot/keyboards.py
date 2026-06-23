@@ -22,13 +22,22 @@ from app.rental.admin_bot.formatters import (
     account_button_label,
     category_button_label,
     chat_account_button_label,
+    chat_rental_button_label,
     lot_button_label,
     rental_button_label,
 )
 from app.rental.common.enums import AccountStatusEnum
 from app.rental.models.chat_account import ChatAccount
 from app.rental.models.lot import Lot
-from app.rental.services.admin import AccountView, CategoryBrowse, LotStock, RentalView
+from app.rental.services.admin import (
+    AccountView,
+    CategoryBrowse,
+    ChatAccountLoad,
+    ChatRentalView,
+    LotStock,
+    RentalCounts,
+    RentalView,
+)
 
 
 def main_menu() -> InlineKeyboardMarkup:
@@ -125,13 +134,13 @@ def category_picker(lot_id: int, paths: list[tuple]) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def chat_lot_accounts(lot: Lot, accounts: list[ChatAccount]) -> InlineKeyboardMarkup:
+def chat_lot_accounts(lot: Lot, loads: list[ChatAccountLoad]) -> InlineKeyboardMarkup:
     """Экран Chat-лота: пул Chat-аккаунтов + добавление логин/пароль (без maFile/bind)."""
     kb = InlineKeyboardBuilder()
-    for account in accounts:
+    for load in loads:
         kb.button(
-            text=chat_account_button_label(account),
-            callback_data=ChatAcc(action='open', chat_account_id=account.id),
+            text=chat_account_button_label(load),
+            callback_data=ChatAcc(action='open', chat_account_id=load.account.id),
         )
     kb.button(
         text=f'⏱ Длительность ({lot.duration_minutes} мин)',
@@ -308,6 +317,16 @@ def extend_options(account_id: int) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
+def rentals_root(counts: RentalCounts) -> InlineKeyboardMarkup:
+    """Подменю «Активные аренды»: Steam / Chat как подкатегории."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text=f'🎮 Steam ({counts.steam})', callback_data=Menu(action='rentals_steam'))
+    kb.button(text=f'🟣 Chat ({counts.chat})', callback_data=Menu(action='rentals_chat'))
+    kb.button(text='⬅️ В меню', callback_data=Menu(action='menu'))
+    kb.adjust(1)
+    return kb.as_markup()
+
+
 def rentals_list(views: list[RentalView]) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     for v in views:
@@ -315,7 +334,20 @@ def rentals_list(views: list[RentalView]) -> InlineKeyboardMarkup:
             text=rental_button_label(v),
             callback_data=Acc(action='open', account_id=v.rental.account_id),
         )
-    kb.button(text='⬅️ В меню', callback_data=Menu(action='menu'))
+    kb.button(text='⬅️ Назад', callback_data=Menu(action='rentals'))
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def chat_rentals_list(views: list[ChatRentalView]) -> InlineKeyboardMarkup:
+    """Список активных Chat-аренд — кнопка ведёт в карточку Chat-аккаунта."""
+    kb = InlineKeyboardBuilder()
+    for v in views:
+        kb.button(
+            text=chat_rental_button_label(v),
+            callback_data=ChatAcc(action='open', chat_account_id=v.rental.chat_account_id),
+        )
+    kb.button(text='⬅️ Назад', callback_data=Menu(action='rentals'))
     kb.adjust(1)
     return kb.as_markup()
 

@@ -11,7 +11,7 @@ async def lot_screen(svc: AdminService, lot: Lot) -> tuple[str, InlineKeyboardMa
     """Экран лота — провайдер-aware: Chat-лот показывает Chat-аккаунты, Steam — Steam."""
     provider = await svc.lot_provider(lot)
     if provider == ProviderEnum.CHAT:
-        accounts = await svc.chat_accounts_of_category(lot.category_id) if lot.category_id else []
-        return fmt.fmt_lot_chat(lot, accounts), kb.chat_lot_accounts(lot, accounts)
+        loads = await svc.chat_pool_loads(lot.category_id) if lot.category_id else []
+        return fmt.fmt_lot_chat(lot, loads), kb.chat_lot_accounts(lot, loads)
     views = await svc.accounts_of_lot(lot.id)
     return fmt.fmt_lot(lot, len(views)), kb.lot_accounts(views, lot)

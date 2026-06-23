@@ -15,7 +15,7 @@ from app.runtime import runtime
 
 router = Router()
 
-_TITLE = '🎮 <b>Админка аренды Steam</b>'
+_TITLE = '🎮 <b>Админка аренды</b>'
 
 
 @router.message(CommandStart())
@@ -70,7 +70,10 @@ async def dashboard(cb: CallbackQuery) -> None:
         svc = AdminService(session, runtime.get_deps())
         dash = await svc.dashboard()
         lots = await svc.lots_with_stock()
-    await cb.message.edit_text(fmt.fmt_dashboard(dash, lots), reply_markup=kb.back_to_menu())
+        chat_pools = await svc.chat_pools()
+    await cb.message.edit_text(
+        fmt.fmt_dashboard(dash, lots, chat_pools), reply_markup=kb.back_to_menu(),
+    )
     await cb.answer()
 
 
@@ -119,8 +122,26 @@ async def _show_category(cb: CallbackQuery, category_id: int | None) -> None:
 
 @router.callback_query(Menu.filter(F.action == 'rentals'))
 async def rentals(cb: CallbackQuery) -> None:
+    """Подменю активных аренд: Steam и Chat как подкатегории."""
     async with get_session() as session:
-        svc = AdminService(session, runtime.get_deps())
-        views = await svc.active_rentals()
+        counts = await AdminService(session, runtime.get_deps()).rental_counts()
+    await cb.message.edit_text(fmt.fmt_rentals_root(counts), reply_markup=kb.rentals_root(counts))
+    await cb.answer()
+
+
+@router.callback_query(Menu.filter(F.action == 'rentals_steam'))
+async def rentals_steam(cb: CallbackQuery) -> None:
+    async with get_session() as session:
+        views = await AdminService(session, runtime.get_deps()).active_rentals()
     await cb.message.edit_text(fmt.fmt_rentals(views), reply_markup=kb.rentals_list(views))
+    await cb.answer()
+
+
+@router.callback_query(Menu.filter(F.action == 'rentals_chat'))
+async def rentals_chat(cb: CallbackQuery) -> None:
+    async with get_session() as session:
+        views = await AdminService(session, runtime.get_deps()).active_chat_rentals()
+    await cb.message.edit_text(
+        fmt.fmt_chat_rentals(views), reply_markup=kb.chat_rentals_list(views),
+    )
     await cb.answer()

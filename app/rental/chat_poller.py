@@ -12,7 +12,7 @@ from app.runtime import runtime
 
 logger = getLogger(__name__)
 
-X_POLL_INTERVAL_SECONDS = 120
+CHAT_POLL_INTERVAL_SECONDS = 120
 
 
 async def chat_expire_once(bot: Bot, admin_ids: list[int]) -> None:
@@ -47,17 +47,17 @@ async def chat_expire_once(bot: Bot, admin_ids: list[int]) -> None:
             try:
                 await bot.send_message(admin_id, text, reply_markup=chat_kick_button(rental.id))
             except Exception:
-                logger.exception('failed to send x expiry alert to %s', admin_id)
+                logger.exception('failed to send chat expiry alert to %s', admin_id)
     if alerts:
-        logger.info('x poller alerted %s expired rentals', len(alerts))
+        logger.info('chat poller alerted %s expired rentals', len(alerts))
 
 
 async def run_chat_expiry(bot: Bot, admin_ids: list[int]) -> None:
     """Бесконечный цикл проверки истёкших Chat-аренд (фоновая задача в run)."""
-    logger.info('x expiry poller started (interval=%ss)', X_POLL_INTERVAL_SECONDS)
+    logger.info('chat expiry poller started (interval=%ss)', CHAT_POLL_INTERVAL_SECONDS)
     while True:
         try:
             await chat_expire_once(bot, admin_ids)
         except Exception:
-            logger.exception('x expiry iteration failed')
-        await asyncio.sleep(X_POLL_INTERVAL_SECONDS)
+            logger.exception('chat expiry iteration failed')
+        await asyncio.sleep(CHAT_POLL_INTERVAL_SECONDS)
