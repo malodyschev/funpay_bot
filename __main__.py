@@ -238,6 +238,7 @@ async def _run() -> None:
         BotCommand(command='start', description='Открыть меню'),
         BotCommand(command='orders', description='Неподтверждённые заказы'),
         BotCommand(command='backup', description='Бэкап БД сейчас'),
+        BotCommand(command='seller_earnings', description='Заработок продавца (2 мес.)'),
     ])
 
     # Боевой FunPay обязателен (режим симуляции удалён). Нет golden_key или

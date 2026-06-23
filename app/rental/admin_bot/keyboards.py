@@ -173,6 +173,10 @@ def chat_account_card(account: ChatAccount) -> InlineKeyboardMarkup:
         callback_data=ChatAcc(action='edit', chat_account_id=aid),
     )
     kb.button(
+        text=f'📦 Вместимость ({account.slots})',
+        callback_data=ChatAcc(action='slots', chat_account_id=aid),
+    )
+    kb.button(
         text='🔄 Заменить аккаунт',
         callback_data=ChatAcc(action='replace', chat_account_id=aid),
     )

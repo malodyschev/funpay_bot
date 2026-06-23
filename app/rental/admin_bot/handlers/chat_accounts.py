@@ -36,6 +36,10 @@ class ChatEditForm(StatesGroup):
     password = State()
 
 
+class ChatSlotsForm(StatesGroup):
+    slots = State()
+
+
 # ---------- добавление Chat-аккаунта ----------
 
 @router.callback_query(ChatAddAccount.filter())
@@ -186,6 +190,55 @@ async def chat_edit_password(message: Message, state: FSMContext) -> None:
         account = await svc.get_chat_account(data['chat_account_id'])
         used = await svc.chat_account_load(data['chat_account_id']) if account else 0
     await message.answer('✅ Обновлено.')
+    if account:
+        await message.answer(
+            fmt.fmt_chat_account_card(account, used),
+            reply_markup=kb.chat_account_card(account),
+        )
+
+
+# ---------- изменение вместимости (слотов) ----------
+
+@router.callback_query(ChatAcc.filter(F.action == 'slots'))
+async def chat_slots_start(cb: CallbackQuery, callback_data: ChatAcc, state: FSMContext) -> None:
+    async with get_session() as session:
+        svc = AdminService(session, runtime.get_deps())
+        account = await svc.get_chat_account(callback_data.chat_account_id)
+        used = await svc.chat_account_load(callback_data.chat_account_id) if account else 0
+    if not account:
+        await cb.answer('Аккаунт не найден', show_alert=True)
+        return
+    await state.set_state(ChatSlotsForm.slots)
+    await state.update_data(chat_account_id=callback_data.chat_account_id)
+    await cb.message.answer(
+        f'📦 Новая вместимость (сейчас {account.slots}, занято {used}).\n'
+        'Сколько человек одновременно — положительное число:',
+    )
+    await cb.answer()
+
+
+@router.message(ChatSlotsForm.slots)
+async def chat_slots_apply(message: Message, state: FSMContext) -> None:
+    text = (message.text or '').strip()
+    if not text.isdigit() or int(text) <= 0:
+        await message.answer('Нужно положительное число. Ещё раз:')
+        return
+    slots = int(text)
+    data = await state.get_data()
+    await state.clear()
+    chat_account_id = data['chat_account_id']
+    async with get_session() as session:
+        svc = AdminService(session, runtime.get_deps())
+        await svc.update_chat_account(chat_account_id, slots=slots)
+        account = await svc.get_chat_account(chat_account_id)
+        used = await svc.chat_account_load(chat_account_id) if account else 0
+    note = ''
+    if slots < used:
+        note = (
+            f'\n⚠️ Новая вместимость ({slots}) меньше занятых мест ({used}). '
+            'Текущие аренды останутся, но новых не будет, пока места не освободятся.'
+        )
+    await message.answer(f'✅ Вместимость изменена на {slots}.{note}')
     if account:
         await message.answer(
             fmt.fmt_chat_account_card(account, used),

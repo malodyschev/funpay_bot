@@ -25,7 +25,7 @@ class ChatAddAccount(CallbackData, prefix='chataddacc'):
 
 
 class ChatAcc(CallbackData, prefix='chatacc'):
-    """Действие над Chat-аккаунтом: action=open|creds|code|edit|replace|delete|delete_yes."""
+    """Chat-аккаунт: action=open|creds|code|edit|slots|replace|delete|delete_yes."""
 
     action: str
     chat_account_id: int

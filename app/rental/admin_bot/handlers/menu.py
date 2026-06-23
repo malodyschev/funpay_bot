@@ -3,17 +3,26 @@ import html
 
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
+from app.config import get_settings
 from app.database import get_session
 from app.rental.admin_bot import formatters as fmt, keyboards as kb
 from app.rental.admin_bot.callbacks import Cat, Menu
+from app.rental.funpay import earnings as earn
 from app.rental.funpay.orders import fetch_unconfirmed, format_report
 from app.rental.services.admin import AdminService
 from app.runtime import runtime
 
 
 router = Router()
+
+
+class SellerEarnings(StatesGroup):
+    link = State()
+
 
 _TITLE = '🎮 <b>Админка аренды</b>'
 
@@ -56,6 +65,46 @@ async def backup_now(message: Message) -> None:
         await make_and_send_backup(message.bot, [message.chat.id])
     except Exception as exc:
         await message.answer(f'⚠️ Бэкап не удался: {html.escape(str(exc))}')
+
+
+@router.message(Command('seller_earnings'))
+async def seller_earnings_start(message: Message, state: FSMContext) -> None:
+    """Спросить ссылку на продавца, чтобы посчитать его заработок за 2 месяца."""
+    await state.set_state(SellerEarnings.link)
+    await message.answer(
+        '💰 Пришли ссылку на продавца FunPay (профиль /users/&lt;id&gt;/ или оффер) '
+        'либо его числовой id — посчитаю заработок за текущий и прошлый месяц.',
+    )
+
+
+@router.message(SellerEarnings.link)
+async def seller_earnings_compute(message: Message, state: FSMContext) -> None:
+    """Получить ссылку, спарсить отзывы и прислать отчёт по заработку."""
+    await state.clear()
+    seller = (message.text or '').strip()
+    if not seller:
+        await message.answer('Пустая ссылка. Запусти /seller_earnings ещё раз.')
+        return
+    settings = get_settings()
+    await message.answer('💰 Считаю заработок по отзывам — это займёт несколько секунд…')
+    try:
+        result = await asyncio.to_thread(
+            earn.calculate_earnings,
+            seller,
+            golden_key=settings.funpay_golden_key or None,
+            user_agent=settings.funpay_user_agent or None,
+            proxy_url=settings.proxy_url or None,
+        )
+    except earn.FunPayEarningsError as exc:
+        await message.answer(f'⚠️ {html.escape(str(exc))}')
+        return
+    except Exception as exc:
+        await message.answer(f'⚠️ Не удалось посчитать заработок: {html.escape(str(exc))}')
+        return
+    await message.answer(
+        earn.format_report(result),
+        disable_web_page_preview=True,
+    )
 
 
 @router.callback_query(Menu.filter(F.action == 'menu'))
