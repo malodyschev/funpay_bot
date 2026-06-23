@@ -126,7 +126,13 @@ async def _upsert_offer(
 
     # Лот уже есть. Синк только ДЕАКТИВИРУЕТ (отражает выключение продавцом);
     # активацию НЕ навязываем — черновик/выключенный включает админ после настройки.
-    update_data: dict = {'price': getattr(offer, 'price', None), 'removed': False}
+    # Название тянем из FunPay (источник истины): заказы матчатся по title, поэтому
+    # переименование оффера на FunPay должно отражаться у нас, иначе заказ «не найдёт» лот.
+    update_data: dict = {
+        'title': title,
+        'price': getattr(offer, 'price', None),
+        'removed': False,
+    }
     if not fp_active and existing.active:
         free = await account_repo.count_free(existing.id)
         if free > 0:  # free>0 → продавец выключил; free==0 → наша скрытка, не трогаем
