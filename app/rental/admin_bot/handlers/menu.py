@@ -143,7 +143,7 @@ async def lots(cb: CallbackQuery) -> None:
 @router.callback_query(Cat.filter(F.action == 'open'))
 async def open_category(cb: CallbackQuery, callback_data: Cat) -> None:
     """Открыть узел дерева категорий (0 — корень)."""
-    await _show_category(cb, callback_data.category_id or None)
+    await _show_category(cb, callback_data.category_id or None, callback_data.page)
 
 
 @router.callback_query(Menu.filter(F.action == 'uncategorized'))
@@ -162,10 +162,15 @@ async def uncategorized(cb: CallbackQuery) -> None:
     await cb.answer()
 
 
-async def _show_category(cb: CallbackQuery, category_id: int | None) -> None:
+async def _show_category(cb: CallbackQuery, category_id: int | None, page: int = 0) -> None:
     async with get_session() as session:
         browse = await AdminService(session, runtime.get_deps()).browse(category_id)
-    await cb.message.edit_text(fmt.fmt_category(browse), reply_markup=kb.category_menu(browse))
+    total_pages = kb.page_count(len(browse.children) + len(browse.lots))
+    page = max(0, min(page, total_pages - 1))
+    await cb.message.edit_text(
+        fmt.fmt_category(browse, page, total_pages),
+        reply_markup=kb.category_menu(browse, page),
+    )
     await cb.answer()
 
 

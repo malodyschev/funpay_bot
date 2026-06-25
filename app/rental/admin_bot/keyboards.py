@@ -69,7 +69,7 @@ def lot_kind() -> InlineKeyboardMarkup:
 def lots_menu(lots: list[LotStock]) -> InlineKeyboardMarkup:
     """Плоский список всех лотов (вторичный экран — после синка/создания лота)."""
     kb = InlineKeyboardBuilder()
-    for ls in lots:
+    for ls in lots[:LOTS_PER_PAGE]:  # лимит Telegram на размер клавиатуры
         kb.button(text=lot_button_label(ls), callback_data=LotOpen(lot_id=ls.lot.id))
     kb.button(text='🔄 Синхр. с FunPay', callback_data=Menu(action='sync'))
     kb.button(text='⬅️ В меню', callback_data=Menu(action='menu'))
@@ -77,19 +77,53 @@ def lots_menu(lots: list[LotStock]) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def category_menu(browse: CategoryBrowse) -> InlineKeyboardMarkup:
-    """Экран узла дерева: подкатегории + лоты под ним + управление + навигация."""
+# Сколько кнопок-элементов (подкатегории + лоты) показываем на одной странице.
+# Telegram режет слишком большую клавиатуру («reply markup is too long»), поэтому
+# при многих лотах листаем страницами, а не суём все 150+ кнопок разом.
+LOTS_PER_PAGE = 50
+
+
+def page_count(total_items: int) -> int:
+    """Сколько страниц нужно под total_items элементов (минимум 1)."""
+    return max(1, (total_items + LOTS_PER_PAGE - 1) // LOTS_PER_PAGE)
+
+
+def category_menu(browse: CategoryBrowse, page: int = 0) -> InlineKeyboardMarkup:
+    """Экран узла дерева: подкатегории + лоты под ним + управление + навигация.
+
+    Элементы (подкатегории, затем лоты) листаются страницами по LOTS_PER_PAGE,
+    чтобы клавиатура не превысила лимит Telegram на больших аккаунтах.
+    """
     kb = InlineKeyboardBuilder()
-    for child in browse.children:
-        kb.button(
-            text=category_button_label(child),
-            callback_data=Cat(action='open', category_id=child.id),
-        )
-    for ls in browse.lots:
-        kb.button(text=lot_button_label(ls), callback_data=LotOpen(lot_id=ls.lot.id))
 
     node = browse.node
     node_id = node.id if node else 0
+
+    # Единый список элементов: сначала подкатегории, затем лоты — и режем на страницы.
+    items: list[tuple[str, object]] = [
+        (category_button_label(child), Cat(action='open', category_id=child.id))
+        for child in browse.children
+    ]
+    items += [
+        (lot_button_label(ls), LotOpen(lot_id=ls.lot.id)) for ls in browse.lots
+    ]
+    total_pages = page_count(len(items))
+    page = max(0, min(page, total_pages - 1))
+    for text, cb_data in items[page * LOTS_PER_PAGE:(page + 1) * LOTS_PER_PAGE]:
+        kb.button(text=text, callback_data=cb_data)
+
+    # Навигация по страницам (только если их больше одной).
+    if page > 0:
+        kb.button(
+            text='◀️ Предыдущие',
+            callback_data=Cat(action='open', category_id=node_id, page=page - 1),
+        )
+    if page < total_pages - 1:
+        kb.button(
+            text='Следующие ▶️',
+            callback_data=Cat(action='open', category_id=node_id, page=page + 1),
+        )
+
     # В корне: бакет неразобранных + синхронизация с FunPay.
     if node is None:
         if browse.uncategorized:
@@ -117,7 +151,7 @@ def category_menu(browse: CategoryBrowse) -> InlineKeyboardMarkup:
 def uncategorized_menu(lots: list[LotStock]) -> InlineKeyboardMarkup:
     """Список синканных лотов без категории — выбрать лот, чтобы назначить категорию."""
     kb = InlineKeyboardBuilder()
-    for ls in lots:
+    for ls in lots[:LOTS_PER_PAGE]:  # лимит Telegram на размер клавиатуры
         kb.button(text=lot_button_label(ls), callback_data=LotOpen(lot_id=ls.lot.id))
     kb.button(text='🔄 Синхр. с FunPay', callback_data=Menu(action='sync'))
     kb.button(text='⬅️ В каталог', callback_data=Menu(action='lots'))
@@ -287,6 +321,7 @@ def account_card(view: AccountView) -> InlineKeyboardMarkup:
 def move_picker(account_id: int, lots: list[LotStock], current_lot_id: int) -> InlineKeyboardMarkup:
     """Выбор целевого лота для перемещения аккаунта (без лотов-продлений и текущего)."""
     kb = InlineKeyboardBuilder()
+    shown = 0
     for ls in lots:
         if ls.lot.is_extension or ls.lot.is_autodelivery or ls.lot.id == current_lot_id:
             continue
@@ -294,6 +329,9 @@ def move_picker(account_id: int, lots: list[LotStock], current_lot_id: int) -> I
             text=f'{ls.lot.title} ({ls.free}/{ls.total})',
             callback_data=MoveTo(account_id=account_id, lot_id=ls.lot.id),
         )
+        shown += 1
+        if shown >= LOTS_PER_PAGE:  # лимит Telegram на размер клавиатуры
+            break
     kb.button(text='↩️ Отмена', callback_data=Acc(action='open', account_id=account_id))
     kb.adjust(1)
     return kb.as_markup()

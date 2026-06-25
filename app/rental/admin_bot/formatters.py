@@ -113,8 +113,8 @@ def fmt_chat_account_card(account: ChatAccount, used: int = 0) -> str:
     ])
 
 
-def fmt_category(browse: CategoryBrowse) -> str:
-    """Заголовок экрана навигации по категории."""
+def fmt_category(browse: CategoryBrowse, page: int = 0, total_pages: int = 1) -> str:
+    """Заголовок экрана навигации по категории (+ счётчики и номер страницы)."""
     node = browse.node
     if node is None:
         return '🗂 <b>Каталог</b>\nВыбери раздел:'
@@ -126,6 +126,12 @@ def fmt_category(browse: CategoryBrowse) -> str:
         meta.append(f'провайдер: {_PROVIDER_LABEL.get(browse.provider, browse.provider.value)}')
     if meta:
         lines.append(' · '.join(meta))
+    if browse.children:
+        lines.append(f'Подкатегорий: {len(browse.children)}')
+    if browse.lots:
+        lines.append(f'Лотов: {len(browse.lots)}')
+    if total_pages > 1:
+        lines.append(f'Страница {page + 1}/{total_pages}')
     if not browse.children and not browse.lots:
         lines.append('\nПусто. Добавь подкатегорию или лот.')
     return '\n'.join(lines)
@@ -179,6 +185,9 @@ _STATUS_ORDER = (
 _STATUS_ALWAYS = (AccountStatusEnum.FREE, AccountStatusEnum.RENTED)
 
 _RULE = '➖➖➖➖➖➖➖➖➖➖'
+
+# Сколько лотов максимум перечислять в дашборде (сообщение Telegram ≤ 4096 символов).
+_DASH_LOTS_LIMIT = 40
 
 
 def status_label(status: AccountStatusEnum) -> str:
@@ -253,8 +262,11 @@ def fmt_dashboard(
     lines += ['', f'📋 <b>Активные аренды</b> — {dash.active_rentals}']
 
     if lots:
-        lines += ['', _RULE, '🗂 <b>Остатки по лотам</b>']
-        for ls in lots:
+        lines += ['', _RULE, f'🗂 <b>Остатки по лотам</b> ({len(lots)})']
+        # При сотнях лотов полный список не влезает в сообщение Telegram (4096
+        # символов) — показываем первые _DASH_LOTS_LIMIT, остальные смотри в каталоге.
+        shown = lots[:_DASH_LOTS_LIMIT]
+        for ls in shown:
             if ls.lot.is_extension:
                 lines.append(f'⏱ {html.escape(ls.lot.title)} — продление')
                 continue
@@ -273,6 +285,8 @@ def fmt_dashboard(
             lines.append(
                 f'{lot_mark(ls)} {html.escape(ls.lot.title)} · <b>{ls.free}</b>/{ls.total}{tail}',
             )
+        if len(lots) > _DASH_LOTS_LIMIT:
+            lines.append(f'…и ещё {len(lots) - _DASH_LOTS_LIMIT} — в «🗂 Лоты и аккаунты».')
 
     lines += fmt_chat_pools(chat_pools)
     return '\n'.join(lines)

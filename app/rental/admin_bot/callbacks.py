@@ -12,10 +12,12 @@ class Cat(CallbackData, prefix='cat'):
 
     action: open (показать узел) | add (новая подкатегория) | add_lot (новый лот сюда).
     category_id: id узла; 0 — корень дерева.
+    page: страница списка лотов/подкатегорий (пагинация при многих лотах).
     """
 
     action: str
     category_id: int
+    page: int = 0
 
 
 class ChatAddAccount(CallbackData, prefix='chataddacc'):
