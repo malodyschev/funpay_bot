@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crypto import decrypt
 from app.rental.chat.totp import totp_now
+from app.rental.common.code_log import append_code_time
 from app.rental.common.enums import ChatRentalStatusEnum
 from app.rental.models.chat_account import ChatAccount
 from app.rental.models.chat_rental import ChatRental
@@ -149,10 +150,13 @@ class ChatRentalService:
             account = await self.chat_account_repo.get_or_none(id_=rental.chat_account_id)
             if not account or not account.totp_secret_enc:
                 return ChatCodeResult(None, 'no_2fa')
+            # Фиксируем вход (запрос кода) в журнал аренды. Алерт не шлём — инфа нужна
+            # при кике по истечении и в карточке аренды. code_requested_at = первый вход.
+            now = datetime.now()
+            values: dict = {'code_log': append_code_time(rental.code_log, now)}
             if rental.code_requested_at is None:
-                await self.chat_rental_repo.update(
-                    {'code_requested_at': datetime.now()}, id_=rental.id,
-                )
+                values['code_requested_at'] = now
+            await self.chat_rental_repo.update(values, id_=rental.id)
             return ChatCodeResult(totp_now(decrypt(account.totp_secret_enc)), 'ok')
         last = await self.chat_rental_repo.get_last_by_chat(chat_id)
         return ChatCodeResult(None, 'expired' if last else 'none')

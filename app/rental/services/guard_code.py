@@ -1,9 +1,11 @@
 from dataclasses import dataclass
+from datetime import datetime
 from logging import getLogger
 from typing import ClassVar
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.rental.common.code_log import append_code_time
 from app.rental.common.exceptions import SteamModuleError
 from app.rental.funpay.events import NewMessageEvent
 from app.rental.providers.registry import get_provider
@@ -57,3 +59,9 @@ class GuardCodeService:
             return
 
         await self.deps.funpay.send_message(event.chat_id, f'📱 Код Steam Guard: {code}')
+
+        # Фиксируем вход (= запрос кода) в журнал аренды. Алерт на каждый запрос НЕ
+        # шлём — журнал виден админу в карточке аренды и при кике по истечении.
+        await self.rental_repo.update(
+            {'code_log': append_code_time(rental.code_log, datetime.now())}, id_=rental.id,
+        )

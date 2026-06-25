@@ -11,7 +11,13 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app.database import get_session
 from app.rental.admin_bot import formatters as fmt, keyboards as kb
-from app.rental.admin_bot.callbacks import ChatAcc, ChatAddAccount, ChatKick, ChatReplace
+from app.rental.admin_bot.callbacks import (
+    ChatAcc,
+    ChatAddAccount,
+    ChatKick,
+    ChatRentView,
+    ChatReplace,
+)
 from app.rental.admin_bot.views import lot_screen
 from app.rental.services.admin import AdminService
 from app.rental.services.chat_rental import ChatRentalService
@@ -130,6 +136,23 @@ async def _show_card(cb: CallbackQuery, chat_account_id: int) -> None:
 @router.callback_query(ChatAcc.filter(F.action == 'open'))
 async def chat_open(cb: CallbackQuery, callback_data: ChatAcc) -> None:
     await _show_card(cb, callback_data.chat_account_id)
+    await cb.answer()
+
+
+@router.callback_query(ChatRentView.filter())
+async def chat_rental_detail(cb: CallbackQuery, callback_data: ChatRentView) -> None:
+    """Карточка одной Chat-аренды: кто, какой аккаунт, когда входил, срок."""
+    async with get_session() as session:
+        view = await AdminService(session, runtime.get_deps()).chat_rental_view(
+            callback_data.rental_id,
+        )
+    if not view:
+        await cb.answer('Аренда не найдена', show_alert=True)
+        return
+    await cb.message.edit_text(
+        fmt.fmt_chat_rental_card(view),
+        reply_markup=kb.chat_rental_card(view),
+    )
     await cb.answer()
 
 

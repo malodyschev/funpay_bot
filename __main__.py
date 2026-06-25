@@ -65,6 +65,9 @@ _SCHEMA_PATCHES = (
     "UPDATE categories SET title = 'Chat' WHERE title = 'X'",
     # Предупреждение за ~час до конца Chat-аренды.
     'ALTER TABLE chat_rentals ADD COLUMN IF NOT EXISTS warned BOOLEAN NOT NULL DEFAULT FALSE',
+    # Журнал всех входов (запросов кода) в активной аренде — ISO-таймстампы текстом.
+    'ALTER TABLE rentals ADD COLUMN IF NOT EXISTS code_log TEXT',
+    'ALTER TABLE chat_rentals ADD COLUMN IF NOT EXISTS code_log TEXT',
 )
 
 

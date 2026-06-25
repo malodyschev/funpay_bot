@@ -44,6 +44,12 @@ class ChatKick(CallbackData, prefix='chatkick'):
     rental_id: int
 
 
+class ChatRentView(CallbackData, prefix='chatrentv'):
+    """Открыть карточку одной Chat-аренды (детали арендатора: входы, срок)."""
+
+    rental_id: int
+
+
 class LotOpen(CallbackData, prefix='lot'):
     """Открыть список аккаунтов лота."""
 

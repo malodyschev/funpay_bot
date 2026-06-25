@@ -315,6 +315,15 @@ class AdminService:
             out.append(ChatRentalView(rental=rental, account=account, lot=lot))
         return out
 
+    async def chat_rental_view(self, rental_id: int) -> ChatRentalView | None:
+        """Одна Chat-аренда с аккаунтом и лотом (для карточки арендатора)."""
+        rental = await self.chat_rental_repo.get_or_none(id_=rental_id)
+        if not rental:
+            return None
+        account = await self.chat_account_repo.get_or_none(id_=rental.chat_account_id)
+        lot = await self.lot_repo.get_or_none(id_=rental.lot_id) if rental.lot_id else None
+        return ChatRentalView(rental=rental, account=account, lot=lot)
+
     async def rental_counts(self) -> RentalCounts:
         """Сколько активных аренд по типам (для подменю «Активные аренды»)."""
         return RentalCounts(

@@ -6,6 +6,7 @@ from aiogram import Bot
 
 from app.database import get_session
 from app.rental.admin_bot.keyboards import chat_kick_button
+from app.rental.common.code_log import parse_code_times
 from app.rental.services.chat_rental import ChatRentalService
 from app.runtime import runtime
 
@@ -30,17 +31,22 @@ async def chat_expire_once(bot: Bot, admin_ids: list[int]) -> None:
     for rental, account in alerts:
         login = account.login if account else '—'
         buyer = rental.buyer_username or str(rental.buyer_id)
-        logged_in = (
-            rental.code_requested_at.strftime('%d.%m %H:%M')
-            if rental.code_requested_at
-            else 'код не запрашивал'
-        )
+        # Когда арендатор входил (= запрашивал код) — якорь для поиска устройств
+        # в session manager. Показываем ВСЕ входы по порядку, сколько бы их ни было.
+        times = parse_code_times(rental.code_log)
+        if not times:
+            login_block = 'Код входа: не запрашивал (возможно, не заходил)\n'
+        else:
+            entries = '\n'.join(
+                f'  {i}. {when:%d.%m %H:%M}' for i, when in enumerate(times, 1)
+            )
+            login_block = f'Входы (запросы кода), всего {len(times)}:\n{entries}\n'
         text = (
             '⏰ <b>Истекла аренда Chat</b>\n'
             f'Покупатель: {html.escape(buyer)}\n'
             f'Заказ: <code>{html.escape(rental.funpay_order_id)}</code>\n'
             f'Аккаунт: {html.escape(login)}\n'
-            f'Вошёл (запросил код): {logged_in}\n'
+            f'{login_block}'
             'Найди это устройство в session manager Chat, деавторизуй и нажми кнопку.'
         )
         for admin_id in admin_ids:

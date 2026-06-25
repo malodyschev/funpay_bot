@@ -29,4 +29,8 @@ class Rental(Base):
     )
     warned: Mapped[bool] = mapped_column(sa.Boolean, default=False)
     extended_minutes: Mapped[int] = mapped_column(sa.Integer, default=0)
+    # Все входы (= запросы Guard-кода) В ЭТОЙ аренде: ISO-таймстампы через перевод
+    # строки. Журнал живёт на строке аренды → у новой аренды он пустой. См.
+    # app.rental.common.code_log (append_code_time / parse_code_times).
+    code_log: Mapped[str | None] = mapped_column(sa.Text)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=datetime.now)

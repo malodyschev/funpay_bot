@@ -9,6 +9,7 @@ from app.rental.admin_bot.callbacks import (
     ChatAcc,
     ChatAddAccount,
     ChatKick,
+    ChatRentView,
     ChatReplace,
     Extend,
     LotAct,
@@ -344,14 +345,27 @@ def rentals_list(views: list[RentalView]) -> InlineKeyboardMarkup:
 
 
 def chat_rentals_list(views: list[ChatRentalView]) -> InlineKeyboardMarkup:
-    """Список активных Chat-аренд — кнопка ведёт в карточку Chat-аккаунта."""
+    """Список активных Chat-аренд — кнопка ведёт в карточку аренды (детали входов)."""
     kb = InlineKeyboardBuilder()
     for v in views:
         kb.button(
             text=chat_rental_button_label(v),
-            callback_data=ChatAcc(action='open', chat_account_id=v.rental.chat_account_id),
+            callback_data=ChatRentView(rental_id=v.rental.id),
         )
     kb.button(text='⬅️ Назад', callback_data=Menu(action='rentals'))
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def chat_rental_card(view: ChatRentalView) -> InlineKeyboardMarkup:
+    """Карточка Chat-аренды: переход к аккаунту (кик/замена) + назад к списку."""
+    kb = InlineKeyboardBuilder()
+    if view.account is not None:
+        kb.button(
+            text='🟣 К аккаунту (кик/замена)',
+            callback_data=ChatAcc(action='open', chat_account_id=view.account.id),
+        )
+    kb.button(text='⬅️ К списку аренд', callback_data=Menu(action='rentals_chat'))
     kb.adjust(1)
     return kb.as_markup()
 

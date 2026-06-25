@@ -29,6 +29,9 @@ class ChatRental(Base):
     # Когда впервые запросили !chat-code (= ~момент логина). Якорь для ручного
     # матчинга в session manager Chat. NULL — ещё не входил.
     code_requested_at: Mapped[datetime | None] = mapped_column(sa.DateTime)
+    # Все входы (= запросы кода) В ЭТОЙ аренде: ISO-таймстампы через перевод строки
+    # (code_requested_at = первый вход; журнал — все входы). См. common.code_log.
+    code_log: Mapped[str | None] = mapped_column(sa.Text)
     expires_at: Mapped[datetime] = mapped_column(sa.DateTime, index=True)
     warned: Mapped[bool] = mapped_column(sa.Boolean, default=False)  # послали алерт «скоро конец»
     status: Mapped[ChatRentalStatusEnum] = mapped_column(

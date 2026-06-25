@@ -2,6 +2,7 @@ import html
 import math
 from datetime import UTC, datetime
 
+from app.rental.common.code_log import parse_code_times
 from app.rental.common.enums import AccountStatusEnum, FulfillmentEnum, ProviderEnum
 from app.rental.models.category import Category
 from app.rental.models.chat_account import ChatAccount
@@ -202,6 +203,18 @@ def buyer_link(buyer_id: int | None, username: str | None) -> str:
     return name
 
 
+def _login_lines(times: list[datetime]) -> list[str]:
+    """Строки «когда входил в аккаунт» (= запрашивал код) — ВСЕ входы по порядку.
+
+    Если кода ни разу не просили — арендатор, скорее всего, не заходил.
+    """
+    if not times:
+        return ['Вход: код ни разу не запрашивал']
+    lines = [f'Входы (запросы кода), всего {len(times)}:']
+    lines += [f'  {i}. {_dt(t)}' for i, t in enumerate(times, 1)]
+    return lines
+
+
 def fmt_chat_pools(pools: list[ChatPoolStat]) -> list[str]:
     """Строки секции «Chat-пулы» для дашборда: аккаунтов и занято/всего мест."""
     if not pools:
@@ -315,6 +328,7 @@ def fmt_account_card(view: AccountView) -> str:
         ]
         if r.extended_minutes:
             lines.append(f'Продлено суммарно: +{r.extended_minutes} мин.')
+        lines += _login_lines(parse_code_times(r.code_log))
     if acc.notes:
         lines += ['', f'📝 {html.escape(acc.notes)}']
     return '\n'.join(lines)
@@ -377,3 +391,22 @@ def chat_rental_button_label(view: ChatRentalView) -> str:
     """Подпись кнопки Chat-аренды в списке."""
     login = view.account.login if view.account else f'acc#{view.rental.chat_account_id}'
     return f'🟣 {login} · ⏳{minutes_left(view.rental.expires_at)}м'
+
+
+def fmt_chat_rental_card(view: ChatRentalView) -> str:
+    """Карточка одной Chat-аренды: арендатор, аккаунт, когда входил, срок."""
+    r = view.rental
+    login = html.escape(view.account.login) if view.account else f'acc#{r.chat_account_id}'
+    lines = [
+        f'🟣 <b>Аренда Chat #{r.id}</b>',
+        f'Покупатель: {buyer_link(r.buyer_id, r.buyer_username)}',
+        f'Аккаунт: {login}',
+        f'Заказ: <code>{html.escape(r.funpay_order_id)}</code>',
+    ]
+    if view.lot:
+        lines.append(f'Лот: {html.escape(view.lot.title)}')
+    lines.append(
+        f'Истекает: {_dt(r.expires_at)} (через ~{minutes_left(r.expires_at)} мин.)',
+    )
+    lines += _login_lines(parse_code_times(r.code_log))
+    return '\n'.join(lines)
