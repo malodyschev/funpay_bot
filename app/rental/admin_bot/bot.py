@@ -9,7 +9,15 @@ from aiogram.filters import BaseFilter
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import ErrorEvent, TelegramObject
 
-from app.rental.admin_bot.handlers import accounts, bind, chat_accounts, manage, menu, refund
+from app.rental.admin_bot.handlers import (
+    accounts,
+    bind,
+    blacklist,
+    chat_accounts,
+    manage,
+    menu,
+    refund,
+)
 
 
 logger = getLogger(__name__)
@@ -42,6 +50,7 @@ def build_admin_bot(token: str, admin_ids: list[int]) -> tuple[Bot, Dispatcher]:
         bind.router,
         refund.router,
         chat_accounts.router,
+        blacklist.router,
     )
     for router in routers:
         dp.include_router(router)

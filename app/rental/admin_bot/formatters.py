@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 from app.rental.common.code_log import parse_code_times
 from app.rental.common.enums import AccountStatusEnum, FulfillmentEnum, ProviderEnum
+from app.rental.models.blocked_buyer import BlockedBuyer
 from app.rental.models.category import Category
 from app.rental.models.chat_account import ChatAccount
 from app.rental.models.lot import Lot
@@ -20,6 +21,22 @@ from app.rental.services.admin import (
     Stats,
 )
 from app.rental.steam.interface import SteamSessionInfo
+
+
+def fmt_blacklist(entries: list[BlockedBuyer]) -> str:
+    """Экран чёрного списка покупателей."""
+    if not entries:
+        return (
+            '🚫 <b>Чёрный список</b>\n\n'
+            'Пусто. Добавь ник покупателя, которому не продаём и не выдаём коды — '
+            'по таким заказам бот ответит отказом и пришлёт тебе алерт.'
+        )
+    lines = ['🚫 <b>Чёрный список</b>', f'Ников: {len(entries)}', '']
+    for e in entries:
+        note = f' — {html.escape(e.note)}' if e.note else ''
+        lines.append(f'• <b>{html.escape(e.username)}</b>{note}')
+    lines.append('\nЖми по нику, чтобы убрать его из списка.')
+    return '\n'.join(lines)
 
 
 def fmt_stats(s: Stats) -> str:

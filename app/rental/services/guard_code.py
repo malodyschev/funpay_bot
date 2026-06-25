@@ -6,10 +6,12 @@ from typing import ClassVar
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.rental.common.code_log import append_code_time
+from app.rental.common.commands import BLOCKED_BUYER_MESSAGE
 from app.rental.common.exceptions import SteamModuleError
 from app.rental.funpay.events import NewMessageEvent
 from app.rental.providers.registry import get_provider
 from app.rental.repositories.account import AccountRepository
+from app.rental.repositories.blocked_buyer import BlockedBuyerRepository
 from app.rental.repositories.category import CategoryRepository
 from app.rental.repositories.lot import LotRepository
 from app.rental.repositories.rental import RentalRepository
@@ -30,6 +32,7 @@ class GuardCodeService:
     account_repo: ClassVar[AccountRepository] = get_repository(AccountRepository)
     lot_repo: ClassVar[LotRepository] = get_repository(LotRepository)
     category_repo: ClassVar[CategoryRepository] = get_repository(CategoryRepository)
+    blocked_repo: ClassVar[BlockedBuyerRepository] = get_repository(BlockedBuyerRepository)
 
     async def handle(self, event: NewMessageEvent) -> None:
         """Send the current Guard code to the active renter of this chat."""
@@ -41,6 +44,11 @@ class GuardCodeService:
                 'Сначала оплатите заказ и возьмите данные командой !acc. '
                 'Если уже оплатили — напишите !admin.',
             )
+            return
+
+        # Чёрный список — код не выдаём.
+        if await self.blocked_repo.is_blocked(rental.buyer_username):
+            await self.deps.funpay.send_message(event.chat_id, BLOCKED_BUYER_MESSAGE)
             return
 
         account = await self.account_repo.get(rental.account_id)

@@ -114,3 +114,10 @@ class MoveTo(CallbackData, prefix='mv'):
 
     account_id: int
     lot_id: int
+
+
+class Blk(CallbackData, prefix='blk'):
+    """Чёрный список: action=add (добавить ник) | del (удалить запись по entry_id)."""
+
+    action: str
+    entry_id: int = 0

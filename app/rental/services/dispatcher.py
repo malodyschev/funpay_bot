@@ -5,6 +5,7 @@ from app.database import get_session
 from app.rental.common.commands import (
     ACC_COMMANDS,
     ADMIN_COMMANDS,
+    BLOCKED_BUYER_MESSAGE,
     CHAT_ACC_COMMANDS,
     CHAT_CODE_COMMANDS,
     CHAT_REFUND_COMMANDS,
@@ -39,6 +40,7 @@ _CHAT_CODE_MESSAGES = {
         'Сначала оплатите заказ — и сразу пришлём код по команде !chat-code. 😊'
     ),
     'no_2fa': '⚠️ Код сейчас недоступен. Напишите !admin — мы быстро поможем. 🙌',
+    'blocked': BLOCKED_BUYER_MESSAGE,
 }
 
 

@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crypto import decrypt
-from app.rental.common.commands import CHAT_DELIVERY_TEMPLATE
+from app.rental.common.commands import BLOCKED_BUYER_MESSAGE, CHAT_DELIVERY_TEMPLATE
 from app.rental.common.enums import (
     AccountStatusEnum,
     ExtensionReasonEnum,
@@ -18,6 +18,7 @@ from app.rental.funpay.events import NewOrderEvent
 from app.rental.models.lot import Lot
 from app.rental.providers.registry import get_provider
 from app.rental.repositories.account import AccountRepository
+from app.rental.repositories.blocked_buyer import BlockedBuyerRepository
 from app.rental.repositories.category import CategoryRepository
 from app.rental.repositories.extension import ExtensionRepository
 from app.rental.repositories.lot import LotRepository
@@ -44,11 +45,25 @@ class NewOrderService:
     lot_repo: ClassVar[LotRepository] = get_repository(LotRepository)
     extension_repo: ClassVar[ExtensionRepository] = get_repository(ExtensionRepository)
     category_repo: ClassVar[CategoryRepository] = get_repository(CategoryRepository)
+    blocked_repo: ClassVar[BlockedBuyerRepository] = get_repository(BlockedBuyerRepository)
 
     async def handle(self, event: NewOrderEvent) -> None:
         """Process a new paid order."""
         if await self.rental_repo.get_by_order_id(event.order_id):
             logger.info('order %s already processed, skip', event.order_id)
+            return
+
+        # Покупатель из чёрного списка — не продаём и не выдаём (анти-кража).
+        if await self.blocked_repo.is_blocked(event.buyer_username):
+            logger.warning(
+                'order %s from blocked buyer %s — выдача остановлена',
+                event.order_id, event.buyer_username,
+            )
+            await self.deps.funpay.send_message(event.chat_id, BLOCKED_BUYER_MESSAGE)
+            await self.deps.notifier.notify(
+                f'🚫 Заблокированный покупатель {event.buyer_username} оформил заказ '
+                f'{event.order_id} — выдача остановлена. Разберись вручную.',
+            )
             return
 
         lots = await self.lot_repo.get_active_by_title(event.lot_title)

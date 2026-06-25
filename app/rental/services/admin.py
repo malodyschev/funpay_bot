@@ -16,12 +16,14 @@ from app.rental.common.enums import (
     RentalStatusEnum,
 )
 from app.rental.models.account import Account
+from app.rental.models.blocked_buyer import BlockedBuyer
 from app.rental.models.category import Category
 from app.rental.models.chat_account import ChatAccount
 from app.rental.models.chat_rental import ChatRental
 from app.rental.models.lot import Lot
 from app.rental.models.rental import Rental
 from app.rental.repositories.account import AccountRepository
+from app.rental.repositories.blocked_buyer import BlockedBuyerRepository, normalize_username
 from app.rental.repositories.category import CategoryRepository
 from app.rental.repositories.chat_account import ChatAccountRepository
 from app.rental.repositories.chat_rental import ChatRentalRepository
@@ -164,6 +166,31 @@ class AdminService:
     category_repo: ClassVar[CategoryRepository] = get_repository(CategoryRepository)
     chat_account_repo: ClassVar[ChatAccountRepository] = get_repository(ChatAccountRepository)
     chat_rental_repo: ClassVar[ChatRentalRepository] = get_repository(ChatRentalRepository)
+    blocked_repo: ClassVar[BlockedBuyerRepository] = get_repository(BlockedBuyerRepository)
+
+    # ---------- чёрный список покупателей ----------
+
+    async def blocked_buyers(self) -> list[BlockedBuyer]:
+        """Все ники в чёрном списке (по алфавиту)."""
+        return list(await self.blocked_repo.list_all())
+
+    async def add_blocked_buyer(self, username: str, note: str | None = None) -> bool:
+        """Добавить ник в чёрный список. False — пусто или уже есть."""
+        norm = normalize_username(username)
+        if not norm:
+            return False
+        if await self.blocked_repo.get_by_username(username):
+            return False
+        await self.blocked_repo.create({
+            'username': username.strip().lstrip('@'),
+            'username_norm': norm,
+            'note': (note or '').strip() or None,
+        })
+        return True
+
+    async def remove_blocked_buyer(self, entry_id: int) -> None:
+        """Убрать запись чёрного списка по id."""
+        await self.blocked_repo.delete(entry_id)
 
     # ---------- чтение ----------
 

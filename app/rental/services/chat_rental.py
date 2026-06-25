@@ -11,10 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.crypto import decrypt
 from app.rental.chat.totp import totp_now
 from app.rental.common.code_log import append_code_time
+from app.rental.common.commands import BLOCKED_BUYER_MESSAGE
 from app.rental.common.enums import ChatRentalStatusEnum
 from app.rental.models.chat_account import ChatAccount
 from app.rental.models.chat_rental import ChatRental
 from app.rental.models.lot import Lot
+from app.rental.repositories.blocked_buyer import BlockedBuyerRepository
 from app.rental.repositories.chat_account import ChatAccountRepository
 from app.rental.repositories.chat_rental import ChatRentalRepository
 from app.rental.repositories.lot import LotRepository
@@ -73,6 +75,7 @@ class ChatRentalService:
     chat_account_repo: ClassVar[ChatAccountRepository] = get_repository(ChatAccountRepository)
     chat_rental_repo: ClassVar[ChatRentalRepository] = get_repository(ChatRentalRepository)
     lot_repo: ClassVar[LotRepository] = get_repository(LotRepository)
+    blocked_repo: ClassVar[BlockedBuyerRepository] = get_repository(BlockedBuyerRepository)
 
     async def place(
         self,
@@ -147,6 +150,8 @@ class ChatRentalService:
         """
         rental = await self.chat_rental_repo.get_active_by_chat(chat_id)
         if rental and rental.expires_at > datetime.now():
+            if await self.blocked_repo.is_blocked(rental.buyer_username):
+                return ChatCodeResult(None, 'blocked')
             account = await self.chat_account_repo.get_or_none(id_=rental.chat_account_id)
             if not account or not account.totp_secret_enc:
                 return ChatCodeResult(None, 'no_2fa')
@@ -243,6 +248,11 @@ class ChatRentalService:
         rental = await self.chat_rental_repo.get_active_by_chat(chat_id)
         if not rental:
             return False
+        # Чёрный список — данные не выдаём (но аренда «наша», поэтому возвращаем True,
+        # чтобы диспетчер не свалился в Steam-ветку !acc).
+        if await self.blocked_repo.is_blocked(rental.buyer_username):
+            await self.deps.funpay.send_message(chat_id, BLOCKED_BUYER_MESSAGE)
+            return True
         account = await self.chat_account_repo.get_or_none(id_=rental.chat_account_id)
         if not account:
             return False

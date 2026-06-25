@@ -5,6 +5,7 @@ from app.rental.admin_bot.callbacks import (
     Acc,
     AddAccount,
     BindAccount,
+    Blk,
     Cat,
     ChatAcc,
     ChatAddAccount,
@@ -28,6 +29,7 @@ from app.rental.admin_bot.formatters import (
     rental_button_label,
 )
 from app.rental.common.enums import AccountStatusEnum
+from app.rental.models.blocked_buyer import BlockedBuyer
 from app.rental.models.chat_account import ChatAccount
 from app.rental.models.lot import Lot
 from app.rental.services.admin import (
@@ -43,8 +45,9 @@ from app.rental.services.admin import (
 
 def main_menu() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    kb.button(text='📊 Дашборд', callback_data=Menu(action='dashboard'))
+    # 📊 Дашборд временно убран из меню (код хендлера оставлен на будущее).
     kb.button(text='🗂 Лоты и аккаунты', callback_data=Menu(action='lots'))
+    kb.button(text='🚫 Чёрный список', callback_data=Menu(action='blacklist'))
     kb.button(text='📋 Активные аренды', callback_data=Menu(action='rentals'))
     kb.button(text='📈 Статистика', callback_data=Menu(action='stats'))
     kb.adjust(1)
@@ -404,6 +407,17 @@ def chat_rental_card(view: ChatRentalView) -> InlineKeyboardMarkup:
             callback_data=ChatAcc(action='open', chat_account_id=view.account.id),
         )
     kb.button(text='⬅️ К списку аренд', callback_data=Menu(action='rentals_chat'))
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def blacklist_menu(entries: list[BlockedBuyer]) -> InlineKeyboardMarkup:
+    """Чёрный список: кнопка-удаление на каждый ник + добавить + назад."""
+    kb = InlineKeyboardBuilder()
+    for e in entries[:LOTS_PER_PAGE]:  # лимит Telegram на размер клавиатуры
+        kb.button(text=f'🗑 {e.username}', callback_data=Blk(action='del', entry_id=e.id))
+    kb.button(text='➕ Добавить ник', callback_data=Blk(action='add'))
+    kb.button(text='⬅️ В меню', callback_data=Menu(action='menu'))
     kb.adjust(1)
     return kb.as_markup()
 

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crypto import decrypt
 from app.rental.common.commands import (
+    BLOCKED_BUYER_MESSAGE,
     EXTEND_TEXT,
     FAQ_TEXT,
     funpay_chat_url,
@@ -15,6 +16,7 @@ from app.rental.common.commands import (
 )
 from app.rental.common.enums import RentalStatusEnum
 from app.rental.repositories.account import AccountRepository
+from app.rental.repositories.blocked_buyer import BlockedBuyerRepository
 from app.rental.repositories.lot import LotRepository
 from app.rental.repositories.rental import RentalRepository
 from app.rental.services.base import get_repository
@@ -34,6 +36,7 @@ class InfoService:
     rental_repo: ClassVar[RentalRepository] = get_repository(RentalRepository)
     account_repo: ClassVar[AccountRepository] = get_repository(AccountRepository)
     lot_repo: ClassVar[LotRepository] = get_repository(LotRepository)
+    blocked_repo: ClassVar[BlockedBuyerRepository] = get_repository(BlockedBuyerRepository)
 
     async def send_credentials(self, chat_id: int) -> None:
         """!acc — повторно выдать логин/пароль активной аренды покупателю."""
@@ -45,6 +48,10 @@ class InfoService:
                 'Команда !acc выдаёт логин и пароль уже после оплаты заказа.\n'
                 'Если вы оплатили, а данные не пришли — напишите !admin, поможем.',
             )
+            return
+        # Чёрный список — данные не выдаём.
+        if await self.blocked_repo.is_blocked(rental.buyer_username):
+            await self.deps.funpay.send_message(chat_id, BLOCKED_BUYER_MESSAGE)
             return
         account = await self.account_repo.get(rental.account_id)
         lot = await self.lot_repo.get_or_none(id_=rental.lot_id)
