@@ -70,14 +70,26 @@ def lot_mark(ls: LotStock) -> str:
     return '🔴'
 
 
+# Названия лотов = описания офферов FunPay (до 500 символов). В кнопках их режем:
+# иначе клавиатура из многих лотов превышает лимит Telegram («reply markup too long»).
+_BTN_TITLE_MAX = 32
+
+
+def _short(text: str, limit: int = _BTN_TITLE_MAX) -> str:
+    """Обрезать длинный текст для подписи кнопки (… в конце)."""
+    text = ' '.join(text.split())  # схлопнуть переводы строк/повторные пробелы
+    return text if len(text) <= limit else text[:limit - 1].rstrip() + '…'
+
+
 def lot_button_label(ls: LotStock) -> str:
     """Подпись кнопки лота в списке (категория/плоский список)."""
     mark = lot_mark(ls)
+    title = _short(ls.lot.title)
     if ls.lot.is_extension:
-        return f'{mark} ⏱ {ls.lot.title} (продление)'
+        return f'{mark} ⏱ {title} (продление)'
     if ls.lot.is_autodelivery:
-        return f'{mark} {ls.lot.title} (автовыдача)'
-    return f'{mark} {ls.lot.title} ({ls.free}/{ls.total})'
+        return f'{mark} {title} (автовыдача)'
+    return f'{mark} {title} ({ls.free}/{ls.total})'
 
 
 _FULFILLMENT_ICON = {
@@ -92,7 +104,7 @@ def category_button_label(category: Category) -> str:
     """Подпись кнопки категории. Иконка по своему типу выдачи (если задан явно)."""
     icon = _FULFILLMENT_ICON.get(category.fulfillment, '📁') if category.fulfillment else '📁'
     suffix = '' if category.active else ' ⚪️'
-    return f'{icon} {category.title}{suffix}'
+    return f'{icon} {_short(category.title)}{suffix}'
 
 
 def chat_account_button_label(load: ChatAccountLoad) -> str:

@@ -81,9 +81,10 @@ def lots_menu(lots: list[LotStock]) -> InlineKeyboardMarkup:
 
 
 # Сколько кнопок-элементов (подкатегории + лоты) показываем на одной странице.
-# Telegram режет слишком большую клавиатуру («reply markup is too long»), поэтому
-# при многих лотах листаем страницами, а не суём все 150+ кнопок разом.
-LOTS_PER_PAGE = 50
+# Telegram режет слишком большую клавиатуру («reply markup is too long») — лимит
+# по суммарному размеру разметки, а не только по числу кнопок. Подписи лотов уже
+# обрезаны (см. lot_button_label), плюс держим скромный размер страницы.
+LOTS_PER_PAGE = 30
 
 
 def page_count(total_items: int) -> int:
@@ -329,7 +330,7 @@ def move_picker(account_id: int, lots: list[LotStock], current_lot_id: int) -> I
         if ls.lot.is_extension or ls.lot.is_autodelivery or ls.lot.id == current_lot_id:
             continue
         kb.button(
-            text=f'{ls.lot.title} ({ls.free}/{ls.total})',
+            text=lot_button_label(ls),
             callback_data=MoveTo(account_id=account_id, lot_id=ls.lot.id),
         )
         shown += 1
