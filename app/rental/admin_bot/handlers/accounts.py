@@ -1,7 +1,10 @@
+import contextlib
 import html
+from io import BytesIO
 from logging import getLogger
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
@@ -12,6 +15,7 @@ from app.rental.admin_bot.callbacks import Acc, Extend, LotOpen, MoveTo
 from app.rental.admin_bot.views import lot_screen
 from app.rental.common.enums import AccountStatusEnum
 from app.rental.common.exceptions import SteamModuleError
+from app.rental.services.account_loader import AccountLoaderService
 from app.rental.services.admin import AdminService
 from app.runtime import runtime
 
@@ -22,6 +26,10 @@ router = Router()
 
 class NotesForm(StatesGroup):
     waiting_text = State()
+
+
+class Account2FAForm(StatesGroup):
+    mafile = State()
 
 
 async def _render_card(account_id: int) -> tuple[str, InlineKeyboardMarkup] | None:
@@ -207,3 +215,54 @@ async def notes_save(message: Message, state: FSMContext) -> None:
     await message.answer(f'✅ {result}')
     if view:
         await message.answer(fmt.fmt_account_card(view), reply_markup=kb.account_card(view))
+
+
+# ---------- обновление 2FA-секретов аккаунта (новый maFile) ----------
+
+@router.callback_query(Acc.filter(F.action == 'edit2fa'))
+async def edit2fa_start(cb: CallbackQuery, callback_data: Acc, state: FSMContext) -> None:
+    await state.set_state(Account2FAForm.mafile)
+    await state.update_data(account_id=callback_data.account_id)
+    await cb.message.answer(
+        '🔑 Пришли НОВЫЙ файл <code>.maFile</code> документом — обновлю 2FA-секреты '
+        '(shared/identity/revocation/device) этого аккаунта. Пароль и лот не меняются.\n'
+        '⚠️ Файл пройдёт через серверы Telegram — после загрузки я удалю сообщение.',
+    )
+    await cb.answer()
+
+
+@router.message(Account2FAForm.mafile, F.document)
+async def edit2fa_file(message: Message, state: FSMContext) -> None:
+    buffer = BytesIO()
+    await message.bot.download(message.document, destination=buffer)
+    try:
+        raw = buffer.getvalue().decode('utf-8')
+    except UnicodeDecodeError:
+        await message.answer('Это не похоже на текстовый maFile. Пришли корректный файл:')
+        return
+    data = await state.get_data()
+    await state.clear()
+    account_id = data['account_id']
+    with contextlib.suppress(TelegramBadRequest):
+        await message.delete()  # убираем maFile из чата
+    try:
+        async with get_session() as session:
+            account = await AccountLoaderService(session).update_secrets_from_mafile(
+                account_id, raw,
+            )
+    except SteamModuleError as exc:
+        await message.answer(f'❌ Не удалось разобрать maFile: {exc}')
+        return
+    if not account:
+        await message.answer('Аккаунт не найден.')
+        return
+    rendered = await _render_card(account_id)
+    await message.answer('✅ 2FA-секреты обновлены.')
+    if rendered:
+        text, markup = rendered
+        await message.answer(text, reply_markup=markup)
+
+
+@router.message(Account2FAForm.mafile)
+async def edit2fa_not_document(message: Message) -> None:
+    await message.answer('Нужен именно файл .maFile (как документ), а не текст.')

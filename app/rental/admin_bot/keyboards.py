@@ -316,6 +316,10 @@ def account_card(view: AccountView) -> InlineKeyboardMarkup:
 
     if acc.status != AccountStatusEnum.RENTED:
         kb.button(text='🔀 Переместить в лот', callback_data=Acc(action='move', account_id=acc.id))
+    kb.button(
+        text='🔑 Обновить 2FA (maFile)',
+        callback_data=Acc(action='edit2fa', account_id=acc.id),
+    )
     kb.button(text='📝 Заметка', callback_data=Acc(action='notes', account_id=acc.id))
     kb.button(text='⬅️ К лоту', callback_data=LotOpen(lot_id=acc.lot_id))
     kb.adjust(1)

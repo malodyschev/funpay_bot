@@ -52,6 +52,35 @@ class AccountLoaderService:
             notes=notes,
         )
 
+    async def update_secrets_from_mafile(
+        self, account_id: int, raw_mafile: str | bytes,
+    ) -> Account | None:
+        """Обновить 2FA-секреты существующего аккаунта из нового maFile.
+
+        Меняем authenticator целиком (shared/identity/revocation/device + steam_id) —
+        секреты Steam это связка, а не один TOTP-ключ. Пароль, лот и статус не трогаем.
+        Возвращает обновлённый аккаунт или None, если аккаунта нет. parse_mafile
+        бросает SteamModuleError на кривом файле — ловит вызывающий хендлер.
+        """
+        parsed = parse_mafile(raw_mafile)
+        account = await self.account_repo.get_or_none(id_=account_id)
+        if not account:
+            return None
+        await self.account_repo.update(
+            {
+                'shared_secret_enc': encrypt(parsed.shared_secret),
+                'identity_secret_enc': encrypt(parsed.identity_secret),
+                'revocation_code_enc': (
+                    encrypt(parsed.revocation_code) if parsed.revocation_code else None
+                ),
+                'device_id': parsed.device_id,
+                'steam_id': parsed.steam_id or account.steam_id,
+            },
+            id_=account_id,
+        )
+        logger.info('account %s 2FA secrets updated from maFile', account_id)
+        return await self.account_repo.get_or_none(id_=account_id)
+
     async def create_account(
         self,
         *,

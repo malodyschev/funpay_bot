@@ -324,11 +324,25 @@ async def chat_delete(cb: CallbackQuery, callback_data: ChatAcc) -> None:
     async with get_session() as session:
         svc = AdminService(session, runtime.get_deps())
         account = await svc.get_chat_account(callback_data.chat_account_id)
-        category_id = account.category_id if account else None
-        if account:
-            await svc.delete_chat_account(callback_data.chat_account_id)
-        browse = await svc.browse(category_id) if category_id else None
-    await cb.answer('Удалён')
+        if not account:
+            await cb.answer('Аккаунт не найден', show_alert=True)
+            return
+        category_id = account.category_id
+        result = await svc.delete_chat_account(callback_data.chat_account_id)
+        blocked = result.startswith('⛔')
+        # Удалили — уходим в категорию; не удалили (есть аренды) — остаёмся на карточке.
+        if blocked:
+            used = await svc.chat_account_load(callback_data.chat_account_id)
+        else:
+            browse = await svc.browse(category_id) if category_id else None
+    if blocked:
+        await cb.answer(result, show_alert=True)
+        await cb.message.edit_text(
+            fmt.fmt_chat_account_card(account, used),
+            reply_markup=kb.chat_account_card(account),
+        )
+        return
+    await cb.answer('Удалён из пула')
     if browse:
         await cb.message.edit_text(
             fmt.fmt_category(browse),

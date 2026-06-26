@@ -572,9 +572,23 @@ class AdminService:
             await self.chat_account_repo.update(values, id_=chat_account_id)
         return True
 
-    async def delete_chat_account(self, chat_account_id: int) -> None:
-        """Удалить Chat-аккаунт."""
-        await self.chat_account_repo.delete(chat_account_id)
+    async def delete_chat_account(self, chat_account_id: int) -> str:
+        """Удалить Chat-аккаунт из пула (мягко: removed=True).
+
+        Hard-delete нельзя — на chat_account ссылаются исторические chat_rentals
+        (FK), удаление строки падает с IntegrityError. Помечаем removed=True: из
+        пула/списков пропадает (list_by_category фильтрует removed), история цела.
+        Блокируем, если есть активные аренды — сперва «Заменить аккаунт» или дождись
+        окончания, иначе арендаторы зависнут на скрытом аккаунте.
+        """
+        active = await self.chat_rental_repo.count_active_by_account(chat_account_id)
+        if active:
+            return (
+                f'⛔ Нельзя удалить: на аккаунте активных аренд — {active}. '
+                'Сначала «🔄 Заменить аккаунт» (перенесёт аренды) или дождись их окончания.'
+            )
+        await self.chat_account_repo.update({'removed': True}, id_=chat_account_id)
+        return 'Аккаунт удалён из пула.'
 
     async def chat_account_code(self, chat_account_id: int) -> str | None:
         """Текущий TOTP-код входа для Chat-аккаунта (для проверки 2FA-ключа)."""
